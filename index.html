@@ -878,19 +878,29 @@ function _setCache(cat, data) {
   _lsSave(cat, data);
 }
 
-// 每次 API 呼叫間隔至少 1.5 秒，429 自動重試最多 3 次
+// 每次 API 呼叫間隔至少 2 秒，429 或網路錯誤自動重試最多 3 次
 async function _apiFetch(url) {
   const gap = Date.now() - _lastApiTs;
-  if (gap < 1500) await new Promise(r => setTimeout(r, 1500 - gap));
+  if (gap < 2000) await new Promise(r => setTimeout(r, 2000 - gap));
   _lastApiTs = Date.now();
   for (let i = 0; i < 3; i++) {
-    const r = await fetch(url);
-    if (r.ok) return r.json();
-    if (r.status === 429 && i < 2) {
-      await new Promise(r => setTimeout(r, 8000 * (i + 1))); // 8s → 16s
-      continue;
+    try {
+      const r = await fetch(url);
+      if (r.ok) return r.json();
+      // 429 或 5xx：等待後重試
+      if ((r.status === 429 || r.status >= 500) && i < 2) {
+        await new Promise(rs => setTimeout(rs, 10000 * (i + 1)));
+        continue;
+      }
+      throw new Error(r.status);
+    } catch(e) {
+      // 網路斷線 / Failed to fetch：也重試
+      if (i < 2) {
+        await new Promise(rs => setTimeout(rs, 8000 * (i + 1)));
+        continue;
+      }
+      throw e;
     }
-    throw new Error(r.status);
   }
 }
 
@@ -915,15 +925,8 @@ async function fetchCoins(cat = 'all') {
     if (cat !== 'all') {
       result = await fetchOnePage(cat, 1);
     } else {
-      const results = [];
-      for (const page of [1, 2, 3]) {
-        try { results.push(await fetchOnePage('all', page)); } catch(e) {}
-      }
-      const seen = new Set(), merged = [];
-      for (const arr of results)
-        for (const c of (arr || []))
-          if (!seen.has(c.id)) { seen.add(c.id); merged.push(c); }
-      result = merged.length ? merged : null;
+      // 初始只抓 1 頁（省速率額度），背景再補 2-3 頁
+      result = await fetchOnePage('all', 1);
     }
     if (result && result.length) _setCache(cat, result);
     return result;
@@ -946,33 +949,29 @@ const PREFETCH_CATS = [
   }
 })();
 
-// 背景預載（15 秒後開始，每 10 秒一個）
+// 背景預載（20 秒後開始，每 12 秒一個，避免速率限制）
 async function prefetchAll() {
-  await new Promise(r => setTimeout(r, 15000));
+  await new Promise(r => setTimeout(r, 20000));
   for (const cat of PREFETCH_CATS) {
-    if (_catCache[cat]) continue; // 已有快取就跳過
+    if (_catCache[cat]) continue;
     try {
       const data = await fetchOnePage(cat, 1);
       if (data && data.length) _setCache(cat, data);
     } catch(e) {}
-    await new Promise(r => setTimeout(r, 10000));
+    await new Promise(r => setTimeout(r, 12000));
   }
 }
 async function fetchTrending() {
   try {
-    const r = await fetch('https://api.coingecko.com/api/v3/search/trending');
-    if (!r.ok) throw new Error(r.status);
-    const d = await r.json();
+    const d = await _apiFetch('https://api.coingecko.com/api/v3/search/trending');
     return d.coins?.slice(0, 10) || [];
-  } catch (e) { return null; }
+  } catch(e) { return null; }
 }
 async function fetchGlobal() {
   try {
-    const r = await fetch('https://api.coingecko.com/api/v3/global');
-    if (!r.ok) throw new Error(r.status);
-    const d = await r.json();
+    const d = await _apiFetch('https://api.coingecko.com/api/v3/global');
     return d.data;
-  } catch (e) { return null; }
+  } catch(e) { return null; }
 }
 
 // ============================================================
