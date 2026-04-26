@@ -1,0 +1,1109 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>妖幣雷達 | Meme Coin Detector</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+:root {
+  --bg-deep: #05050f;
+  --bg-card: #0d0d1f;
+  --bg-hover: #141428;
+  --accent-green: #00ff88;
+  --accent-gold: #f7c948;
+  --accent-red: #ff4466;
+  --accent-blue: #4488ff;
+  --accent-purple: #aa44ff;
+  --text-primary: #e8e8ff;
+  --text-secondary: #8888aa;
+  --border: #1e1e3a;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  min-height: 100vh;
+}
+::-webkit-scrollbar { width: 4px; height: 4px; }
+#catFilters::-webkit-scrollbar { display: none; }
+::-webkit-scrollbar-track { background: var(--bg-deep); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+@keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+@keyframes fadeIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:translateY(0)} }
+
+.pulse { animation: pulse 2s ease-in-out infinite; }
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-hover) 50%, var(--bg-card) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
+}
+.fade-in { animation: fadeIn .25s ease; }
+
+.info-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+.tab-btn {
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all .2s;
+  border: 1px solid transparent;
+}
+.tab-btn.active {
+  background: linear-gradient(135deg,rgba(0,255,136,.15),rgba(68,136,255,.15));
+  border-color: rgba(0,255,136,.4);
+  color: var(--accent-green);
+}
+.tab-btn:not(.active) {
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+.tab-btn:not(.active):hover {
+  border-color: rgba(0,255,136,.3);
+  color: var(--text-primary);
+}
+.cat-pill {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all .15s;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+}
+.cat-pill.active {
+  background: rgba(0,255,136,.12);
+  color: var(--accent-green);
+  border-color: rgba(0,255,136,.4);
+}
+.cat-pill:not(.active):hover {
+  color: var(--text-primary);
+  border-color: rgba(255,255,255,.2);
+}
+.coin-row {
+  transition: background .15s;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.coin-row:hover { background: var(--bg-hover); }
+.expand-row {
+  background: linear-gradient(to right,rgba(0,255,136,.04),transparent);
+  border-left: 2px solid var(--accent-green);
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  margin-right: 3px;
+}
+.score-circle {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700;
+  font-size: 12px;
+}
+.trend-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 8px;
+  border-radius: 8px;
+  margin-bottom: 2px;
+  transition: background .15s;
+  cursor: pointer;
+}
+.trend-item:hover { background: var(--bg-hover); }
+.score-bar { height: 3px; border-radius: 2px; background: var(--border); }
+.score-bar-fill { height: 100%; border-radius: 2px; transition: width .5s ease; }
+th {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  padding: 10px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+th:hover { color: var(--text-primary); }
+td { padding: 9px 8px; }
+.sort-arr { opacity: .4; font-size: 10px; }
+.sort-arr.active { opacity: 1; color: var(--accent-green); }
+</style>
+</head>
+<body>
+
+<!-- 頂部進度條 -->
+<div id="topBar" style="position:fixed;top:0;left:0;width:100%;z-index:200;height:2px;background:rgba(255,255,255,.05);">
+  <div id="refreshBar" style="height:100%;background:linear-gradient(to right,#00ff88,#4488ff);width:100%;transition:width 1s linear;"></div>
+</div>
+
+<!-- Header -->
+<header style="background:rgba(5,5,15,.97);border-bottom:1px solid #1e1e3a;backdrop-filter:blur(12px);position:sticky;top:2px;z-index:100;padding:12px 24px;">
+  <div style="max-width:1700px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span style="font-size:24px;font-weight:800;letter-spacing:-.5px;">
+        <span style="color:#00ff88;">妖</span><span style="color:#e8e8ff;">幣雷達</span>
+      </span>
+      <span style="font-size:11px;color:#8888aa;background:#0d0d1f;border:1px solid #1e1e3a;padding:2px 10px;border-radius:4px;white-space:nowrap;">
+        雙層拉盤檢測 · 表象 + 領先信號
+      </span>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px;">
+      <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#8888aa;">
+        <span class="pulse" style="width:6px;height:6px;border-radius:50%;background:#00ff88;display:inline-block;"></span>
+        <span id="statusText">載入中...</span>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button class="tab-btn active" id="tab1" onclick="switchTab('surface',this)">表象信號</button>
+        <button class="tab-btn" id="tab2" onclick="switchTab('forward',this)">前瞻雷達</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- Main -->
+<main style="max-width:1700px;margin:0 auto;padding:20px 24px;">
+
+  <!-- 篩選條件卡片 -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;" id="criteriaCards">
+    <div class="info-card" style="border-color:rgba(0,255,136,.2);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="font-size:18px;">📊</span>
+        <span style="font-weight:700;color:#00ff88;font-size:14px;">量能涌入</span>
+      </div>
+      <p style="font-size:12px;color:#8888aa;line-height:1.6;">24h 換手 ≥ 50% → 資金突入拉盤初期</p>
+    </div>
+    <div class="info-card" style="border-color:rgba(247,201,72,.2);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="font-size:18px;">🚀</span>
+        <span style="font-weight:700;color:#f7c948;font-size:14px;">拉盤初期</span>
+      </div>
+      <p style="font-size:12px;color:#8888aa;line-height:1.6;">5–40% 漲幅（尚未衝頂）</p>
+    </div>
+    <div class="info-card" style="border-color:rgba(68,136,255,.2);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="font-size:18px;">💎</span>
+        <span style="font-weight:700;color:#4488ff;font-size:14px;">小市值</span>
+      </div>
+      <p style="font-size:12px;color:#8888aa;line-height:1.6;">&lt; $500M → 薄盤易拉</p>
+    </div>
+    <div class="info-card" style="border-color:rgba(255,68,102,.2);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="font-size:18px;">📈</span>
+        <span style="font-weight:700;color:#ff4466;font-size:14px;">日內振幅</span>
+      </div>
+      <p style="font-size:12px;color:#8888aa;line-height:1.6;">當日高低差 ≥ 30%</p>
+    </div>
+  </div>
+
+  <!-- 佈局：主表格 + 側邊欄 -->
+  <div style="display:grid;grid-template-columns:1fr 290px;gap:20px;">
+
+    <!-- 左側主表格 -->
+    <div>
+      <!-- 分類過濾 -->
+      <div style="margin-bottom:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <div id="catFilters" style="display:flex;gap:5px;overflow-x:auto;padding-bottom:2px;flex:1;scrollbar-width:none;">
+            <button class="cat-pill active" onclick="setCategory('all',this)">全部</button>
+            <button class="cat-pill" onclick="setCategory('meme-token',this)">Meme</button>
+            <button class="cat-pill" onclick="setCategory('artificial-intelligence',this)">AI</button>
+            <button class="cat-pill" onclick="setCategory('ai-agents',this)">AI 智能體</button>
+            <button class="cat-pill" onclick="setCategory('solana-ecosystem',this)">Solana 生態</button>
+            <button class="cat-pill" onclick="setCategory('base-ecosystem',this)">Base 生態</button>
+            <button class="cat-pill" onclick="setCategory('decentralized-finance-defi',this)">DeFi</button>
+            <button class="cat-pill" onclick="setCategory('play-to-earn',this)">遊戲</button>
+            <button class="cat-pill" onclick="setCategory('layer-1',this)">L1</button>
+            <button class="cat-pill" onclick="setCategory('layer-2',this)">L2</button>
+            <button class="cat-pill" onclick="setCategory('real-world-assets',this)">RWA</button>
+            <button class="cat-pill" onclick="setCategory('depin',this)">DePIN</button>
+          </div>
+          <div style="margin-left:12px;font-size:11px;color:#8888aa;white-space:nowrap;flex-shrink:0;">
+            點擊行展開 · <span id="countdown">60</span>s 自動刷新
+          </div>
+        </div>
+      </div>
+
+      <!-- 表格 -->
+      <div class="info-card" style="padding:0;overflow:hidden;">
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;min-width:720px;">
+            <thead id="tableHead">
+              <tr style="background:rgba(0,0,0,.4);">
+                <th onclick="sortBy('score')" style="width:58px;text-align:center;">評分 <span class="sort-arr active" id="sa-score">↓</span></th>
+                <th>代幣</th>
+                <th onclick="sortBy('price')" style="text-align:right;">價格 <span class="sort-arr" id="sa-price">↕</span></th>
+                <th onclick="sortBy('change')" style="text-align:right;">24h <span class="sort-arr" id="sa-change">↕</span></th>
+                <th onclick="sortBy('marketcap')" style="text-align:right;">市值 <span class="sort-arr" id="sa-marketcap">↕</span></th>
+                <th onclick="sortBy('ratio')" style="text-align:right;">量/市值 <span class="sort-arr" id="sa-ratio">↕</span></th>
+                <th onclick="sortBy('amplitude')" style="text-align:right;">振幅 <span class="sort-arr" id="sa-amplitude">↕</span></th>
+                <th style="text-align:right;">高低區間</th>
+                <th style="min-width:130px;">信號</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody">
+              <tr><td colspan="8" style="text-align:center;padding:40px;color:#8888aa;font-size:13px;">⏳ 載入中...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右側邊欄 -->
+    <div style="display:flex;flex-direction:column;gap:16px;">
+
+      <!-- 熱門敘事 -->
+      <div class="info-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <h3 style="font-size:13px;font-weight:700;">🔥 熱門敘事 · 24h</h3>
+          <span style="font-size:10px;color:#8888aa;background:rgba(0,255,136,.1);color:#00ff88;border:1px solid rgba(0,255,136,.3);padding:1px 6px;border-radius:4px;">聲量榜</span>
+        </div>
+        <div id="trendingList" style="font-size:12px;">
+          <div style="text-align:center;padding:20px;color:#8888aa;font-size:12px;">⏳ 載入中...</div>
+        </div>
+        <p style="font-size:11px;color:#4a4a6a;margin-top:8px;padding-top:8px;border-top:1px solid #1e1e3a;">
+          與左表重疊 = 共識形成
+        </p>
+      </div>
+
+      <!-- 暴漲預警 -->
+      <div class="info-card">
+        <div style="margin-bottom:12px;">
+          <h3 style="font-size:13px;font-weight:700;">⚡ 暴漲預警</h3>
+          <p style="font-size:11px;color:#8888aa;margin-top:2px;">24h 漲幅 > 20%</p>
+        </div>
+        <div id="gainersList" style="font-size:12px;">
+          <div style="text-align:center;padding:12px;color:#8888aa;font-size:12px;">載入中...</div>
+        </div>
+      </div>
+
+      <!-- 評分公式（動態） -->
+      <div id="formulaCard" class="info-card" style="background:rgba(0,255,136,.03);border-color:rgba(0,255,136,.15);">
+        <h3 style="font-size:12px;font-weight:700;color:#00ff88;margin-bottom:10px;">📐 表象評分公式</h3>
+        <div style="font-size:11px;color:#8888aa;line-height:2;">
+          <div style="display:flex;justify-content:space-between;"><span>量/市值換手</span><span style="color:#e8e8ff;font-weight:600;">30 分</span></div>
+          <div style="display:flex;justify-content:space-between;"><span>日內振幅</span><span style="color:#e8e8ff;font-weight:600;">20 分</span></div>
+          <div style="display:flex;justify-content:space-between;"><span>小市值加權</span><span style="color:#e8e8ff;font-weight:600;">20 分</span></div>
+          <div style="display:flex;justify-content:space-between;"><span>拉盤初期窗口</span><span style="color:#e8e8ff;font-weight:600;">20 分</span></div>
+          <div style="display:flex;justify-content:space-between;"><span>上行空間</span><span style="color:#e8e8ff;font-weight:600;">10 分</span></div>
+          <div style="border-top:1px solid rgba(0,255,136,.1);margin-top:4px;padding-top:4px;display:flex;justify-content:space-between;font-weight:700;">
+            <span style="color:#e8e8ff;">總分</span><span style="color:#00ff88;">100 分</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 市場概覽 -->
+      <div class="info-card">
+        <h3 style="font-size:13px;font-weight:700;margin-bottom:12px;">🌐 市場概覽</h3>
+        <div id="marketOverview" style="font-size:12px;color:#8888aa;line-height:2;">
+          載入中...
+        </div>
+      </div>
+
+    </div>
+  </div>
+</main>
+
+<!-- Footer -->
+<footer style="max-width:1700px;margin:16px auto;padding:0 24px 24px;">
+  <p style="font-size:11px;color:#4a4a6a;line-height:1.8;border-top:1px solid #1e1e3a;padding-top:16px;">
+    ⚠️ 以上僅為技術信號篩選，不構成投資建議。加密貨幣市場風險極高，請自行評估風險。<br>
+    數據來源：CoinGecko API · 每 60 秒自動刷新 · 妖幣雷達 v1.0
+  </p>
+</footer>
+
+<script>
+// ============================================================
+// STATE
+// ============================================================
+let allCoins = [];
+let currentCategory = 'all';
+let currentTab = 'surface';
+let sortField = 'score';
+let sortDir = 1; // 1 = 高→低(降序), -1 = 低→高(升序)
+let expandedCoin = null;
+let refreshTimer = null;
+let cdTimer = null;
+let countdown = 60;
+
+// ============================================================
+// 穩定幣過濾
+// ============================================================
+const STABLECOIN_IDS = new Set([
+  'tether','usd-coin','dai','binance-usd','true-usd','pax-dollar','gemini-dollar',
+  'frax','liquity-usd','fei-usd','magic-internet-money','neutrino','usdd',
+  'stasis-eurs','celo-dollar','first-digital-usd','usde','ethena-usde',
+  'paypal-usd','usd1','usdai','falcon-usd','ondo-us-dollar-yield',
+  'tether-gold','pax-gold','kinesis-gold','kinesis-silver','lido-earn-eth',
+  'theo-short-duration-us-treasury-fund','staked-ether','wrapped-bitcoin',
+  'wrapped-steth','rocket-pool-eth','coinbase-wrapped-steth',
+]);
+const STABLECOIN_SYMBOLS = new Set([
+  'usdt','usdc','dai','busd','tusd','usdp','gusd','frax','lusd','fei',
+  'mim','usdn','usdd','eurs','cusd','fdusd','usde','pyusd','usd1','usdai',
+  'usdf','usdy','xaut','paxg','kau','kag','thbill','earneth','wbtc','steth',
+]);
+
+function isStablecoin(coin) {
+  if (STABLECOIN_IDS.has(coin.id)) return true;
+  if (STABLECOIN_SYMBOLS.has(coin.symbol?.toLowerCase())) return true;
+  // 價格緊貼 $1 ± 1% 且波動極小 → 視為穩定幣
+  const p = coin.current_price || 0;
+  const chg = Math.abs(coin.price_change_percentage_24h || 0);
+  if (p >= 0.99 && p <= 1.01 && chg < 0.5) return true;
+  return false;
+}
+
+// ============================================================
+// 評分計算
+// ============================================================
+function calcScore(coin) {
+  const change = coin.price_change_percentage_24h || 0;
+  const mc     = coin.market_cap || 0;
+  const vol    = coin.total_volume || 0;
+  const high   = coin.high_24h || coin.current_price || 0;
+  const low    = coin.low_24h  || coin.current_price || 0;
+  const ath    = coin.ath || coin.current_price || 0;
+  const price  = coin.current_price || 0;
+
+  const volRatio  = mc > 0 ? vol / mc : 0;
+  const amplitude = low > 0 ? (high - low) / low : 0;
+  const athDist   = ath > 0 ? (ath - price) / ath : 0;
+
+  // 1. 量/市值換手 (0–30)
+  let volScore;
+  if (volRatio >= 1.0) volScore = 30;
+  else if (volRatio >= 0.5) volScore = 22 + ((volRatio - 0.5) / 0.5) * 8;
+  else volScore = (volRatio / 0.5) * 22;
+
+  // 2. 日內振幅 (0–20)
+  let ampScore;
+  if (amplitude >= 0.5) ampScore = 20;
+  else if (amplitude >= 0.3) ampScore = 14 + ((amplitude - 0.3) / 0.2) * 6;
+  else if (amplitude >= 0.1) ampScore = ((amplitude - 0.1) / 0.2) * 14;
+  else ampScore = 0;
+
+  // 3. 小市值加權 (0–20)
+  let mcScore;
+  if      (mc < 10e6)  mcScore = 20;
+  else if (mc < 50e6)  mcScore = 18;
+  else if (mc < 100e6) mcScore = 14;
+  else if (mc < 300e6) mcScore = 9;
+  else if (mc < 500e6) mcScore = 5;
+  else if (mc < 1e9)   mcScore = 2;
+  else                 mcScore = 0;
+
+  // 4. 拉盤初期窗口 (0–20)
+  let pumpScore;
+  if      (change >= 5  && change <= 40)  pumpScore = 20;
+  else if (change >  40 && change <= 100) pumpScore = 12;
+  else if (change >  100)                 pumpScore = 4;
+  else if (change >= 1  && change <  5)   pumpScore = 7;
+  else if (change >= -5 && change <  1)   pumpScore = 2;
+  else                                    pumpScore = 0;
+
+  // 5. 上行空間（距 ATH 越遠越高分，0–10）
+  let upScore;
+  if      (athDist >= 0.8) upScore = 10;
+  else if (athDist >= 0.5) upScore = 7;
+  else if (athDist >= 0.3) upScore = 5;
+  else if (athDist >= 0.1) upScore = 2;
+  else                     upScore = 0;
+
+  return {
+    total: Math.min(100, Math.round(volScore + ampScore + mcScore + pumpScore + upScore)),
+    volScore, ampScore, mcScore, pumpScore, upScore,
+    volRatio, amplitude, athDist
+  };
+}
+
+// ============================================================
+// 信號標籤
+// ============================================================
+function getSignals(coin, s) {
+  const change = coin.price_change_percentage_24h || 0;
+  const price  = coin.current_price || 0;
+  const ath    = coin.ath || 0;
+  const tags   = [];
+  if (s.amplitude   >= 0.3)                     tags.push({ label: '大振幅',  color: '#ff4466', bg: 'rgba(255,68,102,.15)' });
+  if (s.volRatio     >= 0.8)                     tags.push({ label: '放量',    color: '#00ff88', bg: 'rgba(0,255,136,.12)' });
+  if (change >= 5  && change <= 40)              tags.push({ label: '拉盤初期',color: '#f7c948', bg: 'rgba(247,201,72,.15)' });
+  else if (change > 40)                          tags.push({ label: '加速中',  color: '#ff6622', bg: 'rgba(255,102,34,.15)' });
+  if (ath > 0 && price / ath > 0.85)            tags.push({ label: '逼近ATH', color: '#aa44ff', bg: 'rgba(170,68,255,.15)' });
+  if (ath > 0 && price / ath < 0.3)             tags.push({ label: '脫離底部',color: '#4488ff', bg: 'rgba(68,136,255,.13)' });
+  return tags;
+}
+
+// ============================================================
+// 格式化
+// ============================================================
+function fmtPrice(p) {
+  if (!p && p !== 0) return '—';
+  if (p >= 1000)    return '$' + p.toLocaleString('en', { maximumFractionDigits: 0 });
+  if (p >= 1)       return '$' + p.toFixed(4);
+  if (p >= 0.001)   return '$' + p.toFixed(6);
+  if (p >= 1e-6)    return '$' + p.toFixed(8);
+  return '$' + p.toExponential(3);
+}
+function fmtMC(mc) {
+  if (!mc) return '—';
+  if (mc >= 1e12) return '$' + (mc / 1e12).toFixed(2) + 'T';
+  if (mc >= 1e9)  return '$' + (mc / 1e9).toFixed(2) + 'B';
+  if (mc >= 1e6)  return '$' + (mc / 1e6).toFixed(2) + 'M';
+  return '$' + mc.toLocaleString();
+}
+function fmtPct(c) {
+  if (c === null || c === undefined) return '—';
+  return (c >= 0 ? '+' : '') + c.toFixed(2) + '%';
+}
+function scoreStyle(n) {
+  if (n >= 70) return { bg: 'rgba(0,255,136,.18)',  color: '#00ff88', border: '1px solid rgba(0,255,136,.5)' };
+  if (n >= 50) return { bg: 'rgba(247,201,72,.18)', color: '#f7c948', border: '1px solid rgba(247,201,72,.4)' };
+  if (n >= 30) return { bg: 'rgba(68,136,255,.18)', color: '#4488ff', border: '1px solid rgba(68,136,255,.4)' };
+  return        { bg: 'rgba(136,136,170,.08)',      color: '#8888aa', border: '1px solid #1e1e3a' };
+}
+
+// ============================================================
+// 渲染主表格
+// ============================================================
+function renderTable(coins) {
+  // 全部模式下隱藏低分大市值（score < 15 且 MC > $2B）
+  const MIN_SCORE_LARGE_CAP = 15;
+  const filtered = coins.filter(c => {
+    if (isStablecoin(c)) return false;
+    if (currentCategory === 'all') {
+      const s = calcScore(c);
+      if (s.total < MIN_SCORE_LARGE_CAP && (c.market_cap || 0) > 2e9) return false;
+    }
+    return true;
+  });
+  const sorted = [...filtered].sort((a, b) => {
+    const as = calcScore(a), bs = calcScore(b);
+    let av, bv;
+    if      (sortField === 'score')     { av = as.total;     bv = bs.total; }
+    else if (sortField === 'price')     { av = a.current_price; bv = b.current_price; }
+    else if (sortField === 'change')    { av = a.price_change_percentage_24h; bv = b.price_change_percentage_24h; }
+    else if (sortField === 'marketcap') { av = a.market_cap; bv = b.market_cap; }
+    else if (sortField === 'ratio')     { av = as.volRatio;  bv = bs.volRatio; }
+    else if (sortField === 'amplitude') { av = as.amplitude; bv = bs.amplitude; }
+    else                                { av = as.total;     bv = bs.total; }
+    return ((bv || 0) - (av || 0)) * sortDir;
+  });
+
+  const rows = sorted.map(coin => {
+    const s   = calcScore(coin);
+    const sig = getSignals(coin, s);
+    const sc  = scoreStyle(s.total);
+    const chg = coin.price_change_percentage_24h || 0;
+    const cc  = chg >= 0 ? '#00ff88' : '#ff4466';
+    const isEx = expandedCoin === coin.id;
+
+    const badges = sig.slice(0, 3).map(sg =>
+      `<span class="badge" style="background:${sg.bg};color:${sg.color};">${sg.label}</span>`
+    ).join('');
+
+    // 前瞻雷達欄位
+    let extraCols = '';
+    let displayScore = s.total;
+    if (currentTab === 'forward') {
+      const fw = calcForward(coin, s);
+      displayScore = fw.total;
+      const scFw = scoreStyle(fw.total);
+      sc.bg = scFw.bg; sc.color = scFw.color; sc.border = scFw.border;
+
+      const cexMap = {
+        hot:   { label: '🔔 潛在上所', color: '#aa44ff', bg: 'rgba(170,68,255,.18)' },
+        watch: { label: '👁 關注中',   color: '#8866cc', bg: 'rgba(136,102,204,.12)' },
+        none:  { label: '—',           color: '#4a4a6a', bg: 'transparent' },
+      };
+      const fundMap = {
+        squeeze: { label: '🔥 逼空',   color: '#ff4466', bg: 'rgba(255,68,102,.15)' },
+        long:    { label: '📈 多頭',   color: '#00ff88', bg: 'rgba(0,255,136,.12)' },
+        none:    { label: '—',         color: '#4a4a6a', bg: 'transparent' },
+      };
+      const volMap = {
+        viral:    { label: '🚀 病毒式', color: '#00ff88', bg: 'rgba(0,255,136,.15)' },
+        trending: { label: '🔥 熱議中', color: '#f7c948', bg: 'rgba(247,201,72,.13)' },
+        rebound:  { label: '📊 底部反彈',color: '#4488ff', bg: 'rgba(68,136,255,.13)' },
+        none:     { label: '—',         color: '#4a4a6a', bg: 'transparent' },
+      };
+      const c1 = cexMap[fw.cexScore],   c2 = fundMap[fw.fundingScore], c3 = volMap[fw.volumeScore];
+      extraCols = `
+        <td style="text-align:center;">
+          <span class="badge" style="background:${c1.bg};color:${c1.color};">${c1.label}</span>
+        </td>
+        <td style="text-align:center;">
+          <span class="badge" style="background:${c2.bg};color:${c2.color};">${c2.label}</span>
+        </td>
+        <td style="text-align:center;">
+          <span class="badge" style="background:${c3.bg};color:${c3.color};">${c3.label}</span>
+        </td>`;
+    } else {
+      const rangeHi = fmtPrice(coin.high_24h);
+      const rangeLo = fmtPrice(coin.low_24h);
+      extraCols = `
+        <td style="text-align:right;font-size:12px;color:${s.volRatio >= 0.5 ? '#00ff88' : '#8888aa'};font-weight:${s.volRatio >= 0.5 ? '700' : '400'};">
+          ${s.volRatio.toFixed(2)}x
+        </td>
+        <td style="text-align:right;font-size:12px;color:${s.amplitude >= 0.3 ? '#ff4466' : '#8888aa'};">
+          ${(s.amplitude * 100).toFixed(1)}%
+        </td>
+        <td style="text-align:right;font-size:10px;color:#8888aa;white-space:nowrap;">
+          <span style="color:#00ff88;">${rangeHi}</span><br>
+          <span style="color:#ff4466;">${rangeLo}</span>
+        </td>`;
+    }
+
+    const mainRow = `
+    <tr class="coin-row ${isEx ? 'expand-row' : ''}" onclick="toggleExpand('${coin.id}')">
+      <td style="text-align:center;">
+        <div class="score-circle" style="background:${sc.bg};color:${sc.color};border:${sc.border};margin:0 auto;">
+          ${displayScore}
+        </div>
+      </td>
+      <td>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <img src="${coin.image || ''}" alt="" style="width:30px;height:30px;border-radius:50%;background:#1e1e3a;flex-shrink:0;" onerror="this.style.display='none'">
+          <div style="min-width:0;">
+            <div style="font-weight:700;font-size:13px;">${coin.symbol.toUpperCase()}</div>
+            <div style="font-size:10px;color:#8888aa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px;">${coin.name}</div>
+          </div>
+        </div>
+      </td>
+      <td style="text-align:right;font-family:monospace;font-size:12px;">${fmtPrice(coin.current_price)}</td>
+      <td style="text-align:right;color:${cc};font-weight:700;font-size:13px;">${fmtPct(chg)}</td>
+      <td style="text-align:right;font-size:12px;color:#aaaacc;">${fmtMC(coin.market_cap)}</td>
+      ${extraCols}
+      <td style="max-width:160px;">${badges}</td>
+    </tr>`;
+
+    if (!isEx) return mainRow;
+
+    const colSpan = currentTab === 'forward' ? 9 : 10;
+
+    // 解鎖風險：MC/FDV 比值，越低代表未解鎖籌碼越多
+    const fdv = coin.fully_diluted_valuation || 0;
+    const mc  = coin.market_cap || 0;
+    const fdvRatio = fdv > 0 ? mc / fdv : 1;
+    const unlockRisk = fdvRatio < 0.2 ? { label: '高風險', color: '#ff4466', bg: 'rgba(255,68,102,.1)', desc: `MC/FDV ${(fdvRatio*100).toFixed(0)}% · 大量籌碼未解鎖` } :
+                       fdvRatio < 0.5 ? { label: '中風險', color: '#f7c948', bg: 'rgba(247,201,72,.1)',  desc: `MC/FDV ${(fdvRatio*100).toFixed(0)}% · 部分籌碼待解` } :
+                                        { label: '低風險', color: '#00ff88', bg: 'rgba(0,255,136,.08)', desc: `MC/FDV ${(fdvRatio*100).toFixed(0)}% · 籌碼流通充足` };
+    const unlockBar = Math.min(100, Math.round(fdvRatio * 100));
+
+    // 聰明粉動向：量能是否明顯高於「一般水位」(用振幅 × vol/mc 判斷)
+    const volRatio = s.volRatio;
+    const smartSignal = volRatio >= 1.5 ? { label: '大量流入 🐋', color: '#00ff88', desc: '24h 換手超過 150%，疑似機構 / 大戶進場' } :
+                        volRatio >= 0.5 ? { label: '資金流入 📈', color: '#4488ff', desc: `24h 換手 ${(volRatio*100).toFixed(0)}%，資金動向積極` } :
+                        volRatio >= 0.1 ? { label: '小量試盤 👀', color: '#f7c948', desc: `24h 換手 ${(volRatio*100).toFixed(0)}%，靜待突破訊號` } :
+                                          { label: '量能清淡 💤', color: '#8888aa', desc: `24h 換手 ${(volRatio*100).toFixed(0)}%，暫無明顯動能` };
+
+    // 聰明粉數量估算
+    const chgAbs = coin.price_change_percentage_24h || 0;
+    const vol24  = coin.total_volume || 0;
+    // 淨流入 = 成交量 × 漲幅占比（正漲 → 買方主導比例）
+    const buyPct   = Math.min(0.95, Math.max(0.05, 0.5 + chgAbs / 200));
+    const netInflow = vol24 * (buyPct - 0.5) * 2; // 淨多方金額
+    // 大戶活躍筆數：假設大戶單筆 >= $50k，用成交量 / avgTxSize 估算
+    const avgTxSize = mc > 500e6 ? 200000 : mc > 100e6 ? 80000 : mc > 10e6 ? 30000 : 10000;
+    const whaleTxns  = Math.max(1, Math.round(vol24 * buyPct / avgTxSize));
+    const retailTxns = Math.max(1, Math.round(vol24 * (1 - buyPct) / (avgTxSize / 20)));
+    const netInflowStr = netInflow >= 0
+      ? `+${fmtMC(netInflow)}`
+      : `-${fmtMC(Math.abs(netInflow))}`;
+
+    // 7天走勢 sparkline SVG
+    function makeSparkline(prices) {
+      if (!prices || prices.length < 2) return '<span style="color:#4a4a6a;font-size:11px;">暫無走勢數據</span>';
+      const pts = prices.slice(-48); // 最近48個點（約7天）
+      const min = Math.min(...pts), max = Math.max(...pts);
+      const range = max - min || 1;
+      const W = 180, H = 40, pad = 2;
+      const toX = (i) => pad + (i / (pts.length - 1)) * (W - pad * 2);
+      const toY = (v) => H - pad - ((v - min) / range) * (H - pad * 2);
+      const path = pts.map((v, i) => `${i === 0 ? 'M' : 'L'}${toX(i).toFixed(1)},${toY(v).toFixed(1)}`).join(' ');
+      const last = pts[pts.length - 1], first = pts[0];
+      const up = last >= first;
+      const col = up ? '#00ff88' : '#ff4466';
+      const fillPath = path + ` L${toX(pts.length-1).toFixed(1)},${H} L${toX(0).toFixed(1)},${H} Z`;
+      return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block;">
+        <defs>
+          <linearGradient id="sg_${coin.id.replace(/[^a-z0-9]/g,'')}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="${col}" stop-opacity="0.3"/>
+            <stop offset="100%" stop-color="${col}" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <path d="${fillPath}" fill="url(#sg_${coin.id.replace(/[^a-z0-9]/g,'')})" />
+        <path d="${path}" fill="none" stroke="${col}" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>`;
+    }
+    const sparkSVG = makeSparkline(coin.sparkline_in_7d?.price);
+    const chg7 = coin.sparkline_in_7d?.price
+      ? (() => { const p = coin.sparkline_in_7d.price; return ((p[p.length-1]-p[0])/p[0]*100).toFixed(1); })()
+      : null;
+
+    const expandRow = `
+    <tr class="fade-in">
+      <td colspan="${colSpan}" style="background:rgba(0,0,0,.25);padding:0;border-bottom:1px solid rgba(0,255,136,.12);">
+        <div style="padding:16px 16px 16px 58px;">
+
+          <!-- 三欄深度面板 -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;max-width:900px;">
+
+            <!-- 解鎖風險 -->
+            <div style="background:${unlockRisk.bg};border:1px solid ${unlockRisk.color}33;border-radius:10px;padding:12px;">
+              <div style="font-size:10px;color:#8888aa;margin-bottom:6px;letter-spacing:.05em;">🔒 解鎖風險</div>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                <span style="font-size:15px;font-weight:700;color:${unlockRisk.color};">${unlockRisk.label}</span>
+              </div>
+              <div style="font-size:10px;color:#8888aa;margin-bottom:8px;">${unlockRisk.desc}</div>
+              <div style="height:4px;background:rgba(255,255,255,.08);border-radius:2px;">
+                <div style="height:100%;width:${unlockBar}%;background:${unlockRisk.color};border-radius:2px;transition:width .5s;"></div>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:9px;color:#4a4a6a;margin-top:3px;">
+                <span>高風險</span><span>低風險</span>
+              </div>
+            </div>
+
+            <!-- 聰明粉動向 -->
+            <div style="background:rgba(68,136,255,.05);border:1px solid rgba(68,136,255,.2);border-radius:10px;padding:12px;">
+              <div style="font-size:10px;color:#8888aa;margin-bottom:6px;letter-spacing:.05em;">🐋 聰明粉動向</div>
+              <div style="font-size:14px;font-weight:700;color:${smartSignal.color};margin-bottom:4px;">${smartSignal.label}</div>
+              <div style="font-size:10px;color:#8888aa;line-height:1.6;margin-bottom:10px;">${smartSignal.desc}</div>
+              <!-- 數量統計 -->
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
+                <div style="background:rgba(0,0,0,.3);border-radius:6px;padding:7px 8px;">
+                  <div style="font-size:9px;color:#4a4a6a;margin-bottom:2px;">預估淨流入</div>
+                  <div style="font-size:13px;font-weight:700;color:${netInflow>=0?'#00ff88':'#ff4466'};">${netInflowStr}</div>
+                </div>
+                <div style="background:rgba(0,0,0,.3);border-radius:6px;padding:7px 8px;">
+                  <div style="font-size:9px;color:#4a4a6a;margin-bottom:2px;">大戶買入筆數</div>
+                  <div style="font-size:13px;font-weight:700;color:#e8e8ff;">${whaleTxns.toLocaleString()} 筆</div>
+                </div>
+                <div style="background:rgba(0,0,0,.3);border-radius:6px;padding:7px 8px;">
+                  <div style="font-size:9px;color:#4a4a6a;margin-bottom:2px;">散戶交易筆數</div>
+                  <div style="font-size:13px;font-weight:700;color:#8888aa;">${retailTxns.toLocaleString()} 筆</div>
+                </div>
+                <div style="background:rgba(0,0,0,.3);border-radius:6px;padding:7px 8px;">
+                  <div style="font-size:9px;color:#4a4a6a;margin-bottom:2px;">買方主導比</div>
+                  <div style="font-size:13px;font-weight:700;color:${buyPct>0.5?'#00ff88':'#ff4466'};">${(buyPct*100).toFixed(0)}%</div>
+                </div>
+              </div>
+              <div style="height:3px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden;">
+                <div style="height:100%;width:${(buyPct*100).toFixed(0)}%;background:linear-gradient(to right,#4488ff,#00ff88);border-radius:2px;"></div>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:9px;color:#4a4a6a;margin-top:2px;">
+                <span>空方</span><span>多方</span>
+              </div>
+            </div>
+
+            <!-- 7天走勢 -->
+            <div style="background:rgba(0,255,136,.03);border:1px solid rgba(0,255,136,.15);border-radius:10px;padding:12px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <span style="font-size:10px;color:#8888aa;letter-spacing:.05em;">📈 7天走勢</span>
+                ${chg7 !== null ? `<span style="font-size:11px;font-weight:700;color:${parseFloat(chg7)>=0?'#00ff88':'#ff4466'};">${parseFloat(chg7)>=0?'+':''}${chg7}%</span>` : ''}
+              </div>
+              ${sparkSVG}
+              <div style="display:flex;justify-content:space-between;font-size:9px;color:#4a4a6a;margin-top:4px;">
+                <span>7天前</span><span>現在</span>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- 底部數據行 -->
+          <div style="margin-top:10px;font-size:11px;color:#8888aa;display:flex;gap:20px;flex-wrap:wrap;">
+            <span>🏔️ ATH：${fmtPrice(coin.ath)}</span>
+            <span>⬆️ 24h 高：${fmtPrice(coin.high_24h)}</span>
+            <span>⬇️ 24h 低：${fmtPrice(coin.low_24h)}</span>
+            <span>💰 FDV：${fmtMC(fdv)}</span>
+          </div>
+        </div>
+      </td>
+    </tr>`;
+    return mainRow + expandRow;
+  }).join('');
+
+  document.getElementById('tableBody').innerHTML = rows ||
+    '<tr><td colspan="8" style="text-align:center;padding:40px;color:#8888aa;">目前無符合條件的幣種</td></tr>';
+}
+
+// ============================================================
+// Toggle 展開
+// ============================================================
+function toggleExpand(id) {
+  expandedCoin = expandedCoin === id ? null : id;
+  renderTable(allCoins);
+}
+
+// ============================================================
+// 渲染熱門敘事
+// ============================================================
+function renderTrending(coins) {
+  const el = document.getElementById('trendingList');
+  if (!coins?.length) {
+    el.innerHTML = '<p style="font-size:12px;color:#8888aa;text-align:center;padding:12px;">暫無資料</p>';
+    return;
+  }
+  el.innerHTML = coins.map((item, i) => {
+    const c = item.item;
+    const pct = c.data?.price_change_percentage_24h?.usd;
+    const pctStr = pct != null
+      ? `<span style="color:${pct >= 0 ? '#00ff88' : '#ff4466'};font-weight:700;font-size:11px;">${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%</span>`
+      : `<span style="font-size:10px;color:#00ff88;">🔥 熱議</span>`;
+    return `
+    <div class="trend-item">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:11px;color:#4a4a6a;width:14px;text-align:right;">${i + 1}</span>
+        <img src="${c.thumb || ''}" style="width:20px;height:20px;border-radius:50%;" onerror="this.style.display='none'">
+        <div>
+          <span style="font-size:12px;font-weight:600;">${c.name}</span>
+          <span style="font-size:10px;color:#8888aa;margin-left:4px;">${c.symbol}</span>
+        </div>
+      </div>
+      ${pctStr}
+    </div>`;
+  }).join('');
+}
+
+// ============================================================
+// 渲染暴漲預警
+// ============================================================
+function renderGainers(coins) {
+  const el = document.getElementById('gainersList');
+  const gainers = coins
+    .filter(c => !isStablecoin(c) && (c.price_change_percentage_24h || 0) > 20)
+    .sort((a, b) => b.price_change_percentage_24h - a.price_change_percentage_24h)
+    .slice(0, 8);
+  if (!gainers.length) {
+    el.innerHTML = '<p style="font-size:12px;color:#8888aa;text-align:center;padding:8px;">目前無暴漲幣種</p>';
+    return;
+  }
+  el.innerHTML = gainers.map(c => {
+    const chg = c.price_change_percentage_24h || 0;
+    const s   = calcScore(c);
+    const sc  = scoreStyle(s.total);
+    return `
+    <div class="trend-item">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <img src="${c.image || ''}" style="width:18px;height:18px;border-radius:50%;" onerror="this.style.display='none'">
+        <div>
+          <span style="font-size:12px;font-weight:600;">${c.symbol.toUpperCase()}</span>
+          <span style="font-size:10px;color:#8888aa;margin-left:4px;">${fmtMC(c.market_cap)}</span>
+        </div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:12px;color:#00ff88;font-weight:700;">+${chg.toFixed(1)}%</div>
+        <div class="score-circle" style="background:${sc.bg};color:${sc.color};border:${sc.border};width:22px;height:22px;font-size:9px;margin-left:auto;">
+          ${s.total}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ============================================================
+// 渲染市場概覽
+// ============================================================
+function renderGlobal(g) {
+  const el = document.getElementById('marketOverview');
+  if (!g) { el.textContent = '暫無資料'; return; }
+  const mc    = g.total_market_cap?.usd || 0;
+  const chg   = g.market_cap_change_percentage_24h_usd || 0;
+  const chgC  = chg >= 0 ? '#00ff88' : '#ff4466';
+  const btcD  = g.market_cap_percentage?.btc || 0;
+  const ethD  = g.market_cap_percentage?.eth || 0;
+  const vol   = g.total_volume?.usd || 0;
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;"><span>總市值</span><span style="color:#e8e8ff;">${fmtMC(mc)}</span></div>
+    <div style="display:flex;justify-content:space-between;"><span>24h 變動</span><span style="color:${chgC};">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%</span></div>
+    <div style="display:flex;justify-content:space-between;"><span>24h 成交量</span><span style="color:#e8e8ff;">${fmtMC(vol)}</span></div>
+    <div style="display:flex;justify-content:space-between;"><span>BTC 佔比</span><span style="color:#f7c948;">${btcD.toFixed(1)}%</span></div>
+    <div style="display:flex;justify-content:space-between;"><span>ETH 佔比</span><span style="color:#4488ff;">${ethD.toFixed(1)}%</span></div>
+    <div style="display:flex;justify-content:space-between;"><span>活躍幣種</span><span style="color:#e8e8ff;">${(g.active_cryptocurrencies || 0).toLocaleString()}</span></div>`;
+}
+
+// ============================================================
+// API 呼叫
+// ============================================================
+async function fetchOnePage(cat, page, order = 'volume_desc') {
+  const base = 'https://api.coingecko.com/api/v3/coins/markets';
+  const params = new URLSearchParams({
+    vs_currency: 'usd',
+    order,
+    per_page: 100,
+    page,
+    sparkline: true,
+    price_change_percentage: '24h',
+  });
+  if (cat !== 'all') params.set('category', cat);
+  const r = await fetch(`${base}?${params}`);
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+async function fetchCoins(cat = 'all') {
+  try {
+    if (cat !== 'all') {
+      // 特定分類：單頁即可
+      return await fetchOnePage(cat, 1);
+    }
+    // 全部：同時抓 vol top250 + market_cap top250，合併去重
+    const [p1, p2, p3] = await Promise.allSettled([
+      fetchOnePage('all', 1, 'volume_desc'),
+      fetchOnePage('all', 2, 'volume_desc'),
+      fetchOnePage('all', 3, 'volume_desc'),
+    ]);
+    const seen = new Set();
+    const merged = [];
+    for (const res of [p1, p2, p3]) {
+      if (res.status === 'fulfilled') {
+        for (const c of res.value) {
+          if (!seen.has(c.id)) { seen.add(c.id); merged.push(c); }
+        }
+      }
+    }
+    return merged.length ? merged : null;
+  } catch (e) {
+    console.error('fetchCoins:', e);
+    return null;
+  }
+}
+async function fetchTrending() {
+  try {
+    const r = await fetch('https://api.coingecko.com/api/v3/search/trending');
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    return d.coins?.slice(0, 10) || [];
+  } catch (e) { return null; }
+}
+async function fetchGlobal() {
+  try {
+    const r = await fetch('https://api.coingecko.com/api/v3/global');
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    return d.data;
+  } catch (e) { return null; }
+}
+
+// ============================================================
+// 倒數計時 + 進度條
+// ============================================================
+function startCountdown() {
+  countdown = 60;
+  if (cdTimer) clearInterval(cdTimer);
+  const bar = document.getElementById('refreshBar');
+  const cdEl = document.getElementById('countdown');
+  cdTimer = setInterval(() => {
+    countdown--;
+    if (cdEl) cdEl.textContent = countdown;
+    if (bar) bar.style.width = (countdown / 60 * 100) + '%';
+    if (countdown <= 0) { clearInterval(cdTimer); loadAll(); }
+  }, 1000);
+}
+
+// ============================================================
+// 分類切換
+// ============================================================
+async function setCategory(cat, btn) {
+  currentCategory = cat;
+  document.querySelectorAll('.cat-pill').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  expandedCoin = null;
+  document.getElementById('statusText').textContent = '更新中...';
+  const coins = await fetchCoins(cat);
+  if (coins) {
+    allCoins = coins;
+    renderTable(allCoins);
+    renderGainers(coins);
+  }
+  document.getElementById('statusText').textContent = `${new Date().toLocaleTimeString('zh-TW')} 已更新`;
+}
+
+// ============================================================
+// 前瞻信號計算（proxy，基於現有數據）
+// ============================================================
+let trendingIds = new Set(); // 由 fetchTrending 填入
+
+function calcForward(coin, baseScore) {
+  const change  = coin.price_change_percentage_24h || 0;
+  const mc      = coin.market_cap || 0;
+  const vol     = coin.total_volume || 0;
+  const volRatio = mc > 0 ? vol / mc : 0;
+  const chg7    = coin.price_change_percentage_7d_in_currency || 0;
+
+  // CEX催化劑：小市值 + 突發爆量 → 潛在上所關注
+  const cexScore =
+    mc > 0 && mc < 300e6 && volRatio > 1.2 ? 'hot' :
+    mc > 0 && mc < 500e6 && volRatio > 0.8 ? 'watch' : 'none';
+
+  // 費率信號（逼空）：跌勢中爆量 = 空頭被擠壓
+  const fundingScore =
+    change < -3 && volRatio > 0.6  ? 'squeeze' :
+    change < -8 && volRatio > 0.3  ? 'squeeze' :
+    change > 5  && volRatio > 1.0  ? 'long'    : 'none';
+
+  // 聲量動能：在 trending 名單中 或 7d 底部反彈
+  const inTrend = trendingIds.has(coin.id);
+  const recovering = chg7 < -20 && change > 5;
+  const volumeScore =
+    inTrend && change > 0 ? 'viral' :
+    inTrend               ? 'trending' :
+    recovering            ? 'rebound'  : 'none';
+
+  // 前瞻加成（在表象分基礎上）
+  let bonus = 0;
+  if (cexScore === 'hot')       bonus += 15;
+  else if (cexScore === 'watch') bonus += 8;
+  if (fundingScore === 'squeeze') bonus += 12;
+  else if (fundingScore === 'long') bonus += 6;
+  if (volumeScore === 'viral')    bonus += 15;
+  else if (volumeScore === 'trending') bonus += 10;
+  else if (volumeScore === 'rebound')  bonus += 8;
+
+  return {
+    total: Math.min(100, baseScore.total + bonus),
+    cexScore, fundingScore, volumeScore, bonus
+  };
+}
+
+// ============================================================
+// Tab 切換
+// ============================================================
+function switchTab(tab, btn) {
+  currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  updateTableHeader();
+  updateFormulaCard();
+  renderTable(allCoins);
+}
+
+function updateTableHeader() {
+  const head = document.getElementById('tableHead');
+  if (currentTab === 'forward') {
+    head.innerHTML = `
+      <tr style="background:rgba(0,0,0,.4);">
+        <th onclick="sortBy('score')" style="width:58px;text-align:center;">評分 <span class="sort-arr active" id="sa-score">↓</span></th>
+        <th>代幣</th>
+        <th onclick="sortBy('price')" style="text-align:right;">價格 <span class="sort-arr" id="sa-price">↕</span></th>
+        <th onclick="sortBy('change')" style="text-align:right;">24h <span class="sort-arr" id="sa-change">↕</span></th>
+        <th onclick="sortBy('marketcap')" style="text-align:right;">市值 <span class="sort-arr" id="sa-marketcap">↕</span></th>
+        <th style="text-align:center;color:#aa44ff;">CEX 催化劑</th>
+        <th style="text-align:center;color:#ff4466;">費率信號</th>
+        <th style="text-align:center;color:#00ff88;">聲量動能</th>
+        <th style="min-width:120px;">信號</th>
+      </tr>`;
+  } else {
+    head.innerHTML = `
+      <tr style="background:rgba(0,0,0,.4);">
+        <th onclick="sortBy('score')" style="width:58px;text-align:center;">評分 <span class="sort-arr active" id="sa-score">↓</span></th>
+        <th>代幣</th>
+        <th onclick="sortBy('price')" style="text-align:right;">價格 <span class="sort-arr" id="sa-price">↕</span></th>
+        <th onclick="sortBy('change')" style="text-align:right;">24h <span class="sort-arr" id="sa-change">↕</span></th>
+        <th onclick="sortBy('marketcap')" style="text-align:right;">市值 <span class="sort-arr" id="sa-marketcap">↕</span></th>
+        <th onclick="sortBy('ratio')" style="text-align:right;">量/市值 <span class="sort-arr" id="sa-ratio">↕</span></th>
+        <th onclick="sortBy('amplitude')" style="text-align:right;">振幅 <span class="sort-arr" id="sa-amplitude">↕</span></th>
+        <th style="text-align:right;">高低區間</th>
+        <th style="min-width:130px;">信號</th>
+      </tr>`;
+  }
+}
+
+function updateFormulaCard() {
+  const card = document.getElementById('formulaCard');
+  if (currentTab === 'forward') {
+    card.style.background   = 'rgba(170,68,255,.04)';
+    card.style.borderColor  = 'rgba(170,68,255,.3)';
+    card.innerHTML = `
+      <h3 style="font-size:12px;font-weight:700;color:#aa44ff;margin-bottom:10px;">🔮 前瞻雷達公式</h3>
+      <div style="font-size:11px;color:#8888aa;line-height:2;">
+        <div style="padding-bottom:6px;margin-bottom:6px;border-bottom:1px solid rgba(170,68,255,.15);color:#6666aa;font-size:10px;">表象基礎分</div>
+        <div style="display:flex;justify-content:space-between;"><span>量/市值換手</span><span style="color:#e8e8ff;">30</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>日內振幅</span><span style="color:#e8e8ff;">20</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>小市值加權</span><span style="color:#e8e8ff;">20</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>拉盤初期窗口</span><span style="color:#e8e8ff;">20</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>上行空間</span><span style="color:#e8e8ff;">10</span></div>
+        <div style="padding-top:6px;margin-top:6px;border-top:1px solid rgba(170,68,255,.15);color:#aa44ff;font-size:10px;">前瞻加成</div>
+        <div style="display:flex;justify-content:space-between;"><span>CEX 上所催化劑</span><span style="color:#aa44ff;">+15</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>資金費率逼空</span><span style="color:#ff4466;">+12</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>聲量病毒式擴散</span><span style="color:#00ff88;">+15</span></div>
+        <div style="border-top:1px solid rgba(170,68,255,.2);margin-top:4px;padding-top:4px;display:flex;justify-content:space-between;font-weight:700;">
+          <span style="color:#e8e8ff;">上限</span><span style="color:#aa44ff;">100 分</span>
+        </div>
+      </div>`;
+  } else {
+    card.style.background  = 'rgba(0,255,136,.03)';
+    card.style.borderColor = 'rgba(0,255,136,.15)';
+    card.innerHTML = `
+      <h3 style="font-size:12px;font-weight:700;color:#00ff88;margin-bottom:10px;">📐 表象評分公式</h3>
+      <div style="font-size:11px;color:#8888aa;line-height:2;">
+        <div style="display:flex;justify-content:space-between;"><span>量/市值換手</span><span style="color:#e8e8ff;font-weight:600;">30 分</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>日內振幅</span><span style="color:#e8e8ff;font-weight:600;">20 分</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>小市值加權</span><span style="color:#e8e8ff;font-weight:600;">20 分</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>拉盤初期窗口</span><span style="color:#e8e8ff;font-weight:600;">20 分</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>上行空間</span><span style="color:#e8e8ff;font-weight:600;">10 分</span></div>
+        <div style="border-top:1px solid rgba(0,255,136,.1);margin-top:4px;padding-top:4px;display:flex;justify-content:space-between;font-weight:700;">
+          <span style="color:#e8e8ff;">總分</span><span style="color:#00ff88;">100 分</span>
+        </div>
+      </div>`;
+  }
+}
+
+// ============================================================
+// 排序
+// ============================================================
+function sortBy(field) {
+  if (sortField === field) sortDir *= -1;
+  else { sortField = field; sortDir = 1; }
+  document.querySelectorAll('.sort-arr').forEach(el => { el.classList.remove('active'); el.textContent = '↕'; });
+  const sa = document.getElementById('sa-' + field);
+  if (sa) { sa.classList.add('active'); sa.textContent = sortDir === 1 ? '↓' : '↑'; }
+  renderTable(allCoins);
+}
+
+// ============================================================
+// 主載入
+// ============================================================
+async function loadAll() {
+  document.getElementById('statusText').textContent = '更新中...';
+  const [coins, trending, global] = await Promise.all([
+    fetchCoins(currentCategory),
+    fetchTrending(),
+    fetchGlobal(),
+  ]);
+  if (coins)    { allCoins = coins; renderTable(allCoins); renderGainers(coins); }
+  if (trending) {
+    trendingIds = new Set(trending.map(t => t.item?.id).filter(Boolean));
+    renderTrending(trending);
+  }
+  if (global)   renderGlobal(global);
+  document.getElementById('statusText').textContent = `${new Date().toLocaleTimeString('zh-TW')} 已更新`;
+  startCountdown();
+}
+
+// 啟動
+loadAll();
+</script>
+</body>
+</html>
