@@ -925,19 +925,41 @@ function startCountdown() {
 // ============================================================
 // 分類切換
 // ============================================================
+let baseCoins = []; // 保存全部模式的完整資料集
+
 async function setCategory(cat, btn) {
   currentCategory = cat;
   document.querySelectorAll('.cat-pill').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   expandedCoin = null;
-  document.getElementById('statusText').textContent = '更新中...';
+
+  // 切回「全部」直接用快取，不重新 fetch
+  if (cat === 'all') {
+    if (baseCoins.length) allCoins = baseCoins;
+    renderTable(allCoins);
+    renderGainers(allCoins);
+    document.getElementById('statusText').textContent = `${new Date().toLocaleTimeString('zh-TW')} 已更新`;
+    return;
+  }
+
+  document.getElementById('statusText').textContent = '載入板塊...';
+  // 先顯示空狀態，讓使用者知道正在切換
+  document.getElementById('tableBody').innerHTML =
+    '<tr><td colspan="10" style="text-align:center;padding:30px;color:#8888aa;font-size:13px;">⏳ 載入中...</td></tr>';
+
   const coins = await fetchCoins(cat);
-  if (coins) {
+  if (coins && coins.length > 0) {
     allCoins = coins;
     renderTable(allCoins);
-    renderGainers(coins);
+    renderGainers(allCoins);
+    document.getElementById('statusText').textContent = `${new Date().toLocaleTimeString('zh-TW')} 已更新`;
+  } else {
+    // fetch 失敗：顯示從全量資料過濾的結果（近似值）
+    allCoins = baseCoins;
+    renderTable(allCoins);
+    renderGainers(allCoins);
+    document.getElementById('statusText').textContent = '⚠️ 板塊載入失敗，顯示全部資料';
   }
-  document.getElementById('statusText').textContent = `${new Date().toLocaleTimeString('zh-TW')} 已更新`;
 }
 
 // ============================================================
@@ -1092,7 +1114,7 @@ async function loadAll() {
     fetchTrending(),
     fetchGlobal(),
   ]);
-  if (coins)    { allCoins = coins; renderTable(allCoins); renderGainers(coins); }
+  if (coins)    { allCoins = coins; if (currentCategory === 'all') baseCoins = coins; renderTable(allCoins); renderGainers(coins); }
   if (trending) {
     trendingIds = new Set(trending.map(t => t.item?.id).filter(Boolean));
     renderTrending(trending);
