@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>台股雷達 | 妖股偵測器</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+:root {
+  --bg-deep: #05050f;
+  --bg-card: #0d0d1f;
+  --bg-hover: #141428;
+  --accent-green: #00ff88;
+  --accent-gold: #f7c948;
+  --accent-red: #ff4466;
+  --accent-blue: #4488ff;
+  --accent-purple: #aa44ff;
+  --text-primary: #e8e8ff;
+  --text-secondary: #8888aa;
+  --border: #1e1e3a;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  min-height: 100vh;
+}
+::-webkit-scrollbar { width: 4px; height: 4px; }
+#catFilters::-webkit-scrollbar { display: none; }
+::-webkit-scrollbar-track { background: var(--bg-deep); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+@keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+@keyframes fadeIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:translateY(0)} }
+
+.pulse { animation: pulse 2s ease-in-out infinite; }
+.fade-in { animation: fadeIn .2s ease; }
+
+.info-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+.cat-pill {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all .15s;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+}
+.cat-pill.active {
+  background: rgba(0,255,136,.12);
+  color: var(--accent-green);
+  border-color: rgba(0,255,136,.4);
+}
+.cat-pill:not(.active):hover {
+  color: var(--text-primary);
+  border-color: rgba(255,255,255,.2);
+}
+.stock-row {
+  transition: background .15s;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.stock-row:hover { background: var(--bg-hover); }
+.expand-row {
+  background: linear-gradient(to right,rgba(0,255,136,.04),transparent);
+  border-left: 2px solid var(--accent-green);
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  margin-right: 3px;
+}
+.score-circle {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700;
+  font-size: 12px;
+}
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 8px;
+  border-radius: 8px;
+  margin-bottom: 2px;
+  transition: background .15s;
+  cursor: pointer;
+}
+.sidebar-item:hover { background: var(--bg-hover); }
+th {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  padding: 10px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+th:hover { color: var(--text-primary); }
+td { padding: 9px 8px; }
+.sort-arr { opacity: .4; font-size: 10px; }
+.sort-arr.active { opacity: 1; color: var(--accent-green); }
+.breadth-bar { height: 8px; border-radius: 4px; overflow: hidden; display: flex; margin: 6px 0; }
+</style>
+</head>
+<body>
+
+<!-- 頂部進度條 -->
+<div style="position:fixed;top:0;left:0;width:100%;z-index:200;height:2px;background:rgba(255,255,255,.05);">
+  <div id="refreshBar" style="height:100%;background:linear-gradient(to right,#00ff88,#4488ff);width:100%;transition:width 1s linear;"></div>
+</div>
+
+<!-- Header -->
+<header style="background:rgba(5,5,15,.97);border-bottom:1px solid #1e1e3a;backdrop-filter:blur(12px);position:sticky;top:2px;z-index:100;padding:12px 24px;">
+  <div style="max-width:1700px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span style="font-size:24px;font-weight:800;letter-spacing:-.5px;">
+        <span style="color:#00ff88;">台</span><span style="color:#e8e8ff;">股雷達</span>
+      </span>
+      <span style="font-size:11px;color:#8888aa;background:#0d0d1f;border:1px solid #1e1e3a;padding:2px 10px;border-radius:4px;white-space:nowrap;">
+        妖股偵測 · 漲停追蹤
+      </span>
+      <a href="index.html" style="font-size:11px;color:#4488ff;border:1px solid rgba(68,136,255,.3);padding:2px 10px;border-radius:4px;text-decoration:none;white-space:nowrap;transition:border-color .15s;" onmouseover="this.style.borderColor='rgba(68,136,255,.7)'" onmouseout="this.style.borderColor='rgba(68,136,255,.3)'">⚡ 妖幣雷達</a>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px;">
+      <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#8888aa;">
+        <span class="pulse" id="statusDot" style="width:6px;height:6px;border-radius:50%;background:#00ff88;display:inline-block;"></span>
+        <span id="statusText">載入中...</span>
+      </div>
+      <span style="font-size:11px;color:#8888aa;" id="dataTimeEl"></span>
+      <button onclick="refresh()" style="padding:4px 12px;border-radius:6px;background:rgba(0,255,136,.1);border:1px solid rgba(0,255,136,.3);color:#00ff88;font-size:12px;cursor:pointer;">↻ 刷新</button>
+    </div>
+  </div>
+</header>
+
+<!-- Main -->
+<main style="max-width:1700px;margin:0 auto;padding:20px 24px;">
+
+  <!-- 評分說明卡片 -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">
+    <div class="info-card" style="border-color:rgba(255,68,102,.2);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="font-size:18px;">🚀</span>
+        <span style="font-weight:700;color:#ff4466;font-size:14px;">漲幅動能 35分</span>
+      </div>
+      <p style="font-size:12px;color:#8888aa;line-height:1.6;">漲幅每1% = 3.5分，漲停(+10%) = 滿分。動能最強的妖股優先。</p>
+    </div>
+    <div class="info-card" style="border-color:rgba(0,255,136,.2);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="font-size:18px;">📊</span>
+        <span style="font-weight:700;color:#00ff88;font-size:14px;">成交活躍 25分</span>
+      </div>
+      <p style="font-size:12px;color:#8888aa;line-height:1.6;">成交額對數計分。1億元 = 12.5分，10億元 = 18.8分，百億 = 25分。</p>
+    </div>
+    <div class="info-card" style="border-color:rgba(247,201,72,.2);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="font-size:18px;">⚡</span>
+        <span style="font-weight:700;color:#f7c948;font-size:14px;">日內振幅 25分</span>
+      </div>
+      <p style="font-size:12px;color:#8888aa;line-height:1.6;">當日高低差每1% = 2.5分，振幅10% = 滿分。高波動短線機會。</p>
+    </div>
+    <div class="info-card" style="border-color:rgba(170,68,255,.2);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="font-size:18px;">💎</span>
+        <span style="font-weight:700;color:#aa44ff;font-size:14px;">甜蜜價位 15分</span>
+      </div>
+      <p style="font-size:12px;color:#8888aa;line-height:1.6;">股價 5~50元 = 15分。散戶易進出的甜蜜區，流動性佳。</p>
+    </div>
+  </div>
+
+  <!-- 主體：表格 + 側邊欄 -->
+  <div style="display:grid;grid-template-columns:1fr 290px;gap:20px;">
+
+    <!-- 左側主表格 -->
+    <div>
+      <div style="margin-bottom:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <div id="catFilters" style="display:flex;gap:5px;overflow-x:auto;padding-bottom:2px;flex:1;scrollbar-width:none;">
+            <button class="cat-pill active" onclick="setCategory('all',this)">全部</button>
+            <button class="cat-pill" onclick="setCategory('twse',this)">上市</button>
+            <button class="cat-pill" onclick="setCategory('tpex',this)">上櫃</button>
+            <button class="cat-pill" onclick="setCategory('electronics',this)">電子</button>
+            <button class="cat-pill" onclick="setCategory('finance',this)">金融</button>
+            <button class="cat-pill" onclick="setCategory('biotech',this)">生技</button>
+            <button class="cat-pill" onclick="setCategory('shipping',this)">航運</button>
+            <button class="cat-pill" onclick="setCategory('traditional',this)">傳產</button>
+          </div>
+          <div style="margin-left:12px;font-size:11px;color:#8888aa;white-space:nowrap;flex-shrink:0;">
+            點擊展開 · <span id="countdown">300</span>s 刷新
+          </div>
+        </div>
+      </div>
+
+      <!-- 表格 -->
+      <div class="info-card" style="padding:0;overflow:hidden;">
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;min-width:700px;">
+            <thead>
+              <tr style="background:rgba(0,0,0,.4);">
+                <th onclick="sortBy('score')" style="width:58px;text-align:center;">評分 <span class="sort-arr active" id="sa-score">↓</span></th>
+                <th>股票</th>
+                <th onclick="sortBy('close')" style="text-align:right;">收盤 <span class="sort-arr" id="sa-close">↕</span></th>
+                <th onclick="sortBy('changePct')" style="text-align:right;">漲跌% <span class="sort-arr" id="sa-changePct">↕</span></th>
+                <th onclick="sortBy('valueYi')" style="text-align:right;">成交額 <span class="sort-arr" id="sa-valueYi">↕</span></th>
+                <th onclick="sortBy('amplitude')" style="text-align:right;">振幅 <span class="sort-arr" id="sa-amplitude">↕</span></th>
+                <th style="min-width:130px;">信號</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody">
+              <tr><td colspan="7" style="text-align:center;padding:40px;color:#8888aa;font-size:13px;">⏳ 載入台股資料中...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <p style="font-size:11px;color:#4a4a6a;margin-top:8px;text-align:right;">
+        資料來源：TWSE OpenAPI · TPEx OpenAPI · 不構成投資建議
+      </p>
+    </div>
+
+    <!-- 右側邊欄 -->
+    <div style="display:flex;flex-direction:column;gap:16px;">
+
+      <!-- 大盤概覽 -->
+      <div class="info-card">
+        <div style="margin-bottom:12px;">
+          <h3 style="font-size:13px;font-weight:700;">🏛️ 大盤概覽</h3>
+          <p style="font-size:11px;color:#8888aa;margin-top:2px;" id="breadthSubtitle">今日市場強弱</p>
+        </div>
+        <div id="breadthPanel">
+          <div style="text-align:center;padding:20px;color:#8888aa;font-size:12px;">⏳ 載入中...</div>
+        </div>
+      </div>
+
+      <!-- 漲停榜 -->
+      <div class="info-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <h3 style="font-size:13px;font-weight:700;">🔴 漲停榜</h3>
+          <span style="font-size:10px;background:rgba(255,68,102,.15);color:#ff4466;border:1px solid rgba(255,68,102,.3);padding:1px 6px;border-radius:4px;">漲幅≥9.5%</span>
+        </div>
+        <div id="limitUpList">
+          <div style="text-align:center;padding:20px;color:#8888aa;font-size:12px;">⏳ 載入中...</div>
+        </div>
+      </div>
+
+      <!-- 大振幅榜 -->
+      <div class="info-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <h3 style="font-size:13px;font-weight:700;">⚡ 大振幅榜</h3>
+          <span style="font-size:10px;background:rgba(247,201,72,.15);color:#f7c948;border:1px solid rgba(247,201,72,.3);padding:1px 6px;border-radius:4px;">振幅≥8%</span>
+        </div>
+        <div id="highAmpList">
+          <div style="text-align:center;padding:20px;color:#8888aa;font-size:12px;">⏳ 載入中...</div>
+        </div>
+      </div>
+
+      <!-- 評分公式 -->
+      <div class="info-card" style="background:rgba(0,255,136,.03);border-color:rgba(0,255,136,.12);">
+        <h3 style="font-size:12px;font-weight:700;color:#00ff88;margin-bottom:10px;">📐 評分公式</h3>
+        <div style="font-size:11px;color:#8888aa;line-height:2.2;">
+          <div style="display:flex;justify-content:space-between;"><span>漲幅動能</span><span style="color:#ff4466;font-weight:600;">35 分</span></div>
+          <div style="display:flex;justify-content:space-between;"><span>成交活躍</span><span style="color:#00ff88;font-weight:600;">25 分</span></div>
+          <div style="display:flex;justify-content:space-between;"><span>日內振幅</span><span style="color:#f7c948;font-weight:600;">25 分</span></div>
+          <div style="display:flex;justify-content:space-between;"><span>甜蜜價位</span><span style="color:#aa44ff;font-weight:600;">15 分</span></div>
+          <div style="border-top:1px solid rgba(0,255,136,.1);margin-top:4px;padding-top:4px;display:flex;justify-content:space-between;font-weight:700;">
+            <span style="color:#e8e8ff;">總分</span><span style="color:#00ff88;">100 分</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</main>
+
+<script>
+// ── State ──────────────────────────────────────────────────
+let allStocks = [];
+let currentCat = 'all';
+let sortCol = 'score';
+let sortDir = -1;
+let expandedCode = null;
+let cdVal = 300;
+let cdInterval = null;
+
+// ── Utilities ───────────────────────────────────────────────
+function parseNum(s) {
+  if (s === null || s === undefined) return null;
+  const str = String(s).replace(/,/g, '').trim();
+  if (!str || str === '--' || str === '-' || str === 'X' || str === '+' || str === '除權息') return null;
+  const n = parseFloat(str.replace(/^\+/, ''));
+  return isNaN(n) ? null : n;
+}
+
+function fmtPrice(n) {
+  if (n === null || n === undefined || isNaN(n)) return '--';
+  if (n >= 10000) return n.toFixed(0);
+  if (n >= 1000) return n.toFixed(1);
+  if (n >= 100) return n.toFixed(1);
+  return n.toFixed(2);
+}
+
+function fmtPct(n) {
+  if (n === null || isNaN(n)) return '--';
+  return (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
+}
+
+function fmtYi(v) {
+  if (!v || v <= 0) return '--';
+  if (v >= 100) return v.toFixed(0) + '億';
+  if (v >= 10) return v.toFixed(1) + '億';
+  if (v >= 1) return v.toFixed(2) + '億';
+  return (v * 100).toFixed(0) + '百萬';
+}
+
+function colorPct(pct) {
+  if (pct === null || isNaN(pct)) return 'var(--text-secondary)';
+  if (pct >= 9.5) return '#ff2244';
+  if (pct > 0.01) return 'var(--accent-green)';
+  if (pct < -9.5) return '#66aaff';
+  if (pct < -0.01) return 'var(--accent-red)';
+  return 'var(--text-secondary)';
+}
+
+// ── Category ────────────────────────────────────────────────
+function getStockCat(code) {
+  const n = parseInt(code);
+  if ((n >= 2300 && n <= 2399) || (n >= 3000 && n <= 3999) || (n >= 6000 && n <= 6999)) return 'electronics';
+  if ((n >= 2800 && n <= 2899) || (n >= 5800 && n <= 5899)) return 'finance';
+  if (n >= 2600 && n <= 2699) return 'shipping';
+  if ((n >= 1700 && n <= 1799) || (n >= 4700 && n <= 4799)) return 'biotech';
+  return 'traditional';
+}
+
+function catFilter(s) {
+  if (currentCat === 'all') return true;
+  if (currentCat === 'twse') return s.market === 'TWSE';
+  if (currentCat === 'tpex') return s.market === 'TPEx';
+  return s.cat === currentCat;
+}
+
+// ── Stock processing ────────────────────────────────────────
+function processRaw(raw, market) {
+  const code = String(raw.Code || raw.SecuritiesCompanyCode || '').trim();
+  const name = String(raw.Name || raw.CompanyName || '').trim();
+
+  // Only 4-digit codes not starting with 0 (exclude ETFs, warrants)
+  if (!/^[1-9]\d{3}$/.test(code)) return null;
+
+  const close = parseNum(raw.ClosingPrice || raw.Close);
+  const change = parseNum(raw.Change || raw.change);
+  const open   = parseNum(raw.OpeningPrice  || raw.Open);
+  const high   = parseNum(raw.HighestPrice  || raw.High);
+  const low    = parseNum(raw.LowestPrice   || raw.Low);
+  const volume = parseNum(raw.TradeVolume   || raw.TradingShares)  || 0;
+  const value  = parseNum(raw.TradeValue    || raw.TransactionAmount) || 0;
+  const txns   = parseNum(raw.Transaction   || raw.NumberOfTransactions) || 0;
+
+  if (!close || close <= 0) return null;
+  if (!high || !low || high <= 0 || low <= 0 || high < low) return null;
+
+  const prevClose  = change !== null ? close - change : close;
+  const changePct  = prevClose > 0 && change !== null ? (change / prevClose) * 100 : 0;
+  const amplitude  = prevClose > 0 ? ((high - low) / prevClose) * 100 : 0;
+  const limitUp    = Math.round(prevClose * 1.1 * 100) / 100;
+  const limitDown  = Math.round(prevClose * 0.9 * 100) / 100;
+  const valueYi    = value / 1e8;
+
+  // Scoring
+  const scoreChange = Math.min(35, Math.max(0, changePct * 3.5));
+  const scoreValue  = valueYi <= 0 ? 0
+    : Math.min(25, Math.max(0, (Math.log10(Math.max(0.001, valueYi)) + 2) / 4 * 25));
+  const scoreAmp    = Math.min(25, Math.max(0, amplitude * 2.5));
+  let scorePrice    = 0;
+  if (close >= 5 && close <= 50)                       scorePrice = 15;
+  else if ((close >= 3 && close < 5) || (close > 50 && close <= 150)) scorePrice = 8;
+  else if (close > 150 && close <= 500)                scorePrice = 4;
+
+  return {
+    code, name, market, cat: getStockCat(code),
+    close, change, changePct, open, high, low,
+    volume, value, valueYi, txns,
+    prevClose, amplitude, limitUp, limitDown,
+    score: Math.round(scoreChange + scoreValue + scoreAmp + scorePrice),
+  };
+}
+
+// ── Signals ─────────────────────────────────────────────────
+function signals(s) {
+  const out = [];
+  if (s.changePct >= 9.9)
+    out.push(['漲停', 'background:rgba(255,34,68,.2);color:#ff2244;border:1px solid rgba(255,34,68,.4)']);
+  else if (s.changePct >= 8)
+    out.push(['近漲停', 'background:rgba(255,140,0,.15);color:#ff8c00;border:1px solid rgba(255,140,0,.4)']);
+  else if (s.changePct >= 5)
+    out.push(['強勢', 'background:rgba(0,255,136,.12);color:#00ff88;border:1px solid rgba(0,255,136,.35)']);
+  if (s.amplitude >= 8)
+    out.push(['大振幅', 'background:rgba(68,136,255,.12);color:#4488ff;border:1px solid rgba(68,136,255,.35)']);
+  if (s.close >= 5 && s.close <= 30)
+    out.push(['甜蜜價', 'background:rgba(170,68,255,.12);color:#aa44ff;border:1px solid rgba(170,68,255,.35)']);
+  return out;
+}
+
+// ── Score circle style ───────────────────────────────────────
+function scoreStyle(score) {
+  if (score >= 75) return 'background:rgba(0,255,136,.15);border:2px solid rgba(0,255,136,.5);color:#00ff88';
+  if (score >= 55) return 'background:rgba(247,201,72,.12);border:2px solid rgba(247,201,72,.4);color:#f7c948';
+  if (score >= 35) return 'background:rgba(68,136,255,.12);border:2px solid rgba(68,136,255,.4);color:#4488ff';
+  return 'background:rgba(136,136,170,.08);border:2px solid rgba(136,136,170,.25);color:#8888aa';
+}
+
+// ── Render table ─────────────────────────────────────────────
+function renderTable() {
+  const filtered = allStocks.filter(catFilter);
+  filtered.sort((a, b) => {
+    const va = a[sortCol] ?? -Infinity;
+    const vb = b[sortCol] ?? -Infinity;
+    if (vb === va) return 0;
+    return (vb - va) * sortDir > 0 ? 1 : -1;
+  });
+
+  const tbody = document.getElementById('tableBody');
+  if (!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-secondary);font-size:13px;">此板塊暫無資料</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = '';
+  filtered.forEach(s => {
+    const pctColor = colorPct(s.changePct);
+    const sigs     = signals(s);
+
+    const tr = document.createElement('tr');
+    tr.className = 'stock-row fade-in';
+    tr.onclick   = () => toggleRow(s.code);
+    tr.innerHTML = `
+      <td style="text-align:center;">
+        <div class="score-circle" style="${scoreStyle(s.score)}">${s.score}</div>
+      </td>
+      <td>
+        <div style="font-weight:600;font-size:13px;">${s.name}</div>
+        <div style="font-size:11px;color:var(--text-secondary);">${s.code} · ${s.market}</div>
+      </td>
+      <td style="text-align:right;font-weight:600;font-size:14px;">${fmtPrice(s.close)}</td>
+      <td style="text-align:right;">
+        <div style="font-weight:700;color:${pctColor};">${fmtPct(s.changePct)}</div>
+        <div style="font-size:11px;color:${pctColor};opacity:.7;">${s.change !== null ? (s.change >= 0 ? '+' : '') + fmtPrice(s.change) : '--'}</div>
+      </td>
+      <td style="text-align:right;font-size:12px;">${fmtYi(s.valueYi)}</td>
+      <td style="text-align:right;font-size:12px;">${s.amplitude.toFixed(1)}%</td>
+      <td>${sigs.map(([t, st]) => `<span class="badge" style="${st}">${t}</span>`).join('')}</td>
+    `;
+    tbody.appendChild(tr);
+
+    if (expandedCode === s.code) {
+      const distToLimit = s.close < s.limitUp
+        ? '+' + ((s.limitUp - s.close) / s.close * 100).toFixed(1) + '%'
+        : '已漲停';
+      const lotsStr = s.volume > 0
+        ? Math.round(s.volume / 1000).toLocaleString() + ' 張'
+        : '--';
+
+      const expTr = document.createElement('tr');
+      expTr.className = 'expand-row';
+      expTr.innerHTML = `
+        <td colspan="7" style="padding:12px 16px;">
+          <div style="display:flex;gap:24px;flex-wrap:wrap;font-size:12px;line-height:2;">
+            <div><span style="color:var(--text-secondary);">前日收</span>&nbsp;<strong>${fmtPrice(s.prevClose)}</strong></div>
+            <div><span style="color:var(--text-secondary);">開盤</span>&nbsp;<strong>${fmtPrice(s.open)}</strong></div>
+            <div><span style="color:var(--text-secondary);">最高</span>&nbsp;<strong style="color:var(--accent-green);">${fmtPrice(s.high)}</strong></div>
+            <div><span style="color:var(--text-secondary);">最低</span>&nbsp;<strong style="color:var(--accent-red);">${fmtPrice(s.low)}</strong></div>
+            <div><span style="color:var(--text-secondary);">漲停價</span>&nbsp;<strong style="color:#ff4466;">${fmtPrice(s.limitUp)}</strong></div>
+            <div><span style="color:var(--text-secondary);">跌停價</span>&nbsp;<strong style="color:#4488ff;">${fmtPrice(s.limitDown)}</strong></div>
+            <div><span style="color:var(--text-secondary);">距漲停</span>&nbsp;<strong>${distToLimit}</strong></div>
+            <div><span style="color:var(--text-secondary);">成交</span>&nbsp;<strong>${lotsStr}</strong></div>
+            <div><span style="color:var(--text-secondary);">筆數</span>&nbsp;<strong>${s.txns > 0 ? s.txns.toLocaleString() : '--'}</strong></div>
+          </div>
+        </td>
+      `;
+      tbody.appendChild(expTr);
+    }
+  });
+}
+
+// ── Sidebar: breadth ─────────────────────────────────────────
+function renderBreadth() {
+  if (!allStocks.length) return;
+
+  const up       = allStocks.filter(s => s.changePct >  0.01).length;
+  const down     = allStocks.filter(s => s.changePct < -0.01).length;
+  const flat     = allStocks.length - up - down;
+  const limitUp  = allStocks.filter(s => s.changePct >= 9.5).length;
+  const limitDn  = allStocks.filter(s => s.changePct <= -9.5).length;
+  const total    = allStocks.length;
+
+  const upW   = Math.round(up   / total * 100);
+  const flatW = Math.round(flat / total * 100);
+  const dnW   = 100 - upW - flatW;
+
+  document.getElementById('breadthSubtitle').textContent = `${total.toLocaleString()} 支股票`;
+  document.getElementById('breadthPanel').innerHTML = `
+    <div class="breadth-bar">
+      <div style="width:${upW}%;background:var(--accent-green);"></div>
+      <div style="width:${flatW}%;background:#444466;"></div>
+      <div style="width:${dnW}%;background:var(--accent-red);"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-secondary);margin-bottom:10px;">
+      <span style="color:var(--accent-green);">上漲 ${upW}%</span>
+      <span>平盤</span>
+      <span style="color:var(--accent-red);">下跌 ${dnW}%</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+      <div style="background:rgba(0,255,136,.08);border:1px solid rgba(0,255,136,.2);border-radius:8px;padding:8px;text-align:center;">
+        <div style="color:var(--accent-green);font-size:22px;font-weight:700;">${up}</div>
+        <div style="color:var(--text-secondary);font-size:11px;">上漲</div>
+      </div>
+      <div style="background:rgba(255,68,102,.08);border:1px solid rgba(255,68,102,.2);border-radius:8px;padding:8px;text-align:center;">
+        <div style="color:var(--accent-red);font-size:22px;font-weight:700;">${down}</div>
+        <div style="color:var(--text-secondary);font-size:11px;">下跌</div>
+      </div>
+      <div style="background:rgba(136,136,170,.05);border:1px solid var(--border);border-radius:8px;padding:8px;text-align:center;">
+        <div style="color:var(--text-secondary);font-size:22px;font-weight:700;">${flat}</div>
+        <div style="color:var(--text-secondary);font-size:11px;">平盤</div>
+      </div>
+      <div style="background:rgba(255,34,68,.06);border:1px solid rgba(255,34,68,.2);border-radius:8px;padding:8px;text-align:center;">
+        <div style="color:#ff2244;font-size:22px;font-weight:700;">${limitUp}</div>
+        <div style="color:var(--text-secondary);font-size:11px;">漲停</div>
+      </div>
+    </div>
+    ${limitDn > 0 ? `
+    <div style="margin-top:6px;background:rgba(68,136,255,.05);border:1px solid rgba(68,136,255,.15);border-radius:8px;padding:6px 10px;display:flex;justify-content:space-between;align-items:center;">
+      <span style="font-size:11px;color:var(--text-secondary);">跌停股</span>
+      <span style="color:#66aaff;font-weight:700;">${limitDn}</span>
+    </div>` : ''}
+  `;
+}
+
+// ── Sidebar: limit-up list ────────────────────────────────────
+function renderLimitUpList() {
+  const items = allStocks
+    .filter(s => s.changePct >= 9.5)
+    .sort((a, b) => b.changePct - a.changePct)
+    .slice(0, 15);
+
+  const el = document.getElementById('limitUpList');
+  if (!items.length) {
+    el.innerHTML = `<div style="text-align:center;padding:16px;color:var(--text-secondary);font-size:12px;">今日暫無漲停股</div>`;
+    return;
+  }
+  el.innerHTML = items.map(s => `
+    <div class="sidebar-item" onclick="window.open('https://tw.stock.yahoo.com/quote/${s.code}','_blank')">
+      <div>
+        <div style="font-weight:600;font-size:12px;">${s.name} <span style="color:var(--text-secondary);font-size:10px;">${s.code}</span></div>
+        <div style="font-size:11px;color:var(--text-secondary);">${fmtPrice(s.close)} · ${fmtYi(s.valueYi)}</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="color:#ff2244;font-weight:700;font-size:13px;">${fmtPct(s.changePct)}</div>
+        <div style="font-size:10px;color:var(--text-secondary);">${s.market}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── Sidebar: high-amplitude list ──────────────────────────────
+function renderHighAmpList() {
+  const items = allStocks
+    .filter(s => s.amplitude >= 8)
+    .sort((a, b) => b.amplitude - a.amplitude)
+    .slice(0, 10);
+
+  const el = document.getElementById('highAmpList');
+  if (!items.length) {
+    el.innerHTML = `<div style="text-align:center;padding:16px;color:var(--text-secondary);font-size:12px;">今日暫無大振幅股</div>`;
+    return;
+  }
+  el.innerHTML = items.map(s => `
+    <div class="sidebar-item">
+      <div>
+        <div style="font-weight:600;font-size:12px;">${s.name} <span style="color:var(--text-secondary);font-size:10px;">${s.code}</span></div>
+        <div style="font-size:11px;color:var(--text-secondary);">${fmtPrice(s.close)} · ${s.market}</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="color:#f7c948;font-weight:700;font-size:13px;">${s.amplitude.toFixed(1)}%</div>
+        <div style="font-size:11px;color:${colorPct(s.changePct)};font-weight:600;">${fmtPct(s.changePct)}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── API ──────────────────────────────────────────────────────
+async function fetchTWSE() {
+  const r = await fetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL');
+  if (!r.ok) throw new Error('TWSE HTTP ' + r.status);
+  return r.json();
+}
+
+async function fetchTPEx() {
+  const r = await fetch('https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes');
+  if (!r.ok) throw new Error('TPEx HTTP ' + r.status);
+  return r.json();
+}
+
+async function loadAll() {
+  setStatus('載入中...');
+
+  const [twseRes, tpexRes] = await Promise.allSettled([fetchTWSE(), fetchTPEx()]);
+
+  const twseRaw  = twseRes.status  === 'fulfilled' ? twseRes.value  : [];
+  const tpexRaw  = tpexRes.status  === 'fulfilled' ? tpexRes.value  : [];
+
+  if (twseRes.status === 'rejected') console.error('TWSE:', twseRes.reason);
+  if (tpexRes.status === 'rejected') console.error('TPEx:', tpexRes.reason);
+
+  const processed = [
+    ...(Array.isArray(twseRaw) ? twseRaw : []).map(r => processRaw(r, 'TWSE')).filter(Boolean),
+    ...(Array.isArray(tpexRaw) ? tpexRaw : []).map(r => processRaw(r, 'TPEx')).filter(Boolean),
+  ];
+
+  if (!processed.length) {
+    setStatus('無資料（可能為非交易日）', true);
+    document.getElementById('tableBody').innerHTML =
+      `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--accent-gold);font-size:13px;">⚠️ 台股資料取得失敗（可能為非交易日或服務暫停）</td></tr>`;
+    document.getElementById('breadthPanel').innerHTML =
+      `<div style="text-align:center;padding:16px;color:var(--text-secondary);font-size:12px;">無資料</div>`;
+    document.getElementById('limitUpList').innerHTML =
+      `<div style="text-align:center;padding:16px;color:var(--text-secondary);font-size:12px;">無資料</div>`;
+    document.getElementById('highAmpList').innerHTML =
+      `<div style="text-align:center;padding:16px;color:var(--text-secondary);font-size:12px;">無資料</div>`;
+    return;
+  }
+
+  processed.sort((a, b) => b.score - a.score);
+  allStocks = processed;
+
+  const parts = [];
+  if (twseRes.status === 'rejected') parts.push('上市失敗');
+  if (tpexRes.status === 'rejected') parts.push('上櫃失敗');
+
+  const statusMsg = parts.length
+    ? `部分載入（${parts.join('、')}）· ${allStocks.length} 支`
+    : `${allStocks.length} 支股票`;
+  setStatus(statusMsg, parts.length > 0 && allStocks.length === 0);
+
+  const now = new Date();
+  document.getElementById('dataTimeEl').textContent =
+    `${now.getMonth()+1}/${now.getDate()} ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+  renderTable();
+  renderBreadth();
+  renderLimitUpList();
+  renderHighAmpList();
+}
+
+// ── Event handlers ────────────────────────────────────────────
+function setCategory(cat, el) {
+  currentCat = cat;
+  document.querySelectorAll('.cat-pill').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  expandedCode = null;
+  renderTable();
+}
+
+function sortBy(col) {
+  sortDir = sortCol === col ? sortDir * -1 : -1;
+  sortCol = col;
+  document.querySelectorAll('.sort-arr').forEach(a => {
+    a.classList.remove('active');
+    a.textContent = '↕';
+  });
+  const el = document.getElementById('sa-' + col);
+  if (el) { el.classList.add('active'); el.textContent = sortDir === -1 ? '↓' : '↑'; }
+  renderTable();
+}
+
+function toggleRow(code) {
+  expandedCode = expandedCode === code ? null : code;
+  renderTable();
+}
+
+function setStatus(text, error = false) {
+  document.getElementById('statusText').textContent = text;
+  document.getElementById('statusDot').style.background =
+    error ? 'var(--accent-red)' : 'var(--accent-green)';
+}
+
+function startCountdown() {
+  clearInterval(cdInterval);
+  cdVal = 300;
+  updateBar(300);
+  cdInterval = setInterval(() => {
+    cdVal--;
+    const el = document.getElementById('countdown');
+    if (el) el.textContent = cdVal;
+    updateBar(cdVal);
+    if (cdVal <= 0) {
+      clearInterval(cdInterval);
+      loadAll().then(startCountdown);
+    }
+  }, 1000);
+}
+
+function updateBar(v) {
+  const bar = document.getElementById('refreshBar');
+  if (bar) bar.style.width = (v / 300 * 100) + '%';
+}
+
+function refresh() {
+  loadAll().then(startCountdown);
+}
+
+// ── Init ──────────────────────────────────────────────────────
+loadAll().then(startCountdown);
+</script>
+</body>
+</html>
