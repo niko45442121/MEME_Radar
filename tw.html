@@ -371,7 +371,7 @@ function processRaw(raw, market) {
   const low    = parseNum(raw.LowestPrice   || raw.Low);
   const volume = parseNum(raw.TradeVolume   || raw.TradingShares)  || 0;
   const value  = parseNum(raw.TradeValue    || raw.TransactionAmount) || 0;
-  const txns   = parseNum(raw.Transaction   || raw.NumberOfTransactions) || 0;
+  const txns   = parseNum(raw.Transaction   || raw.NumberOfTransactions || raw.TransactionNumber) || 0;
 
   if (!close || close <= 0) return null;
   if (!high || !low || high <= 0 || low <= 0 || high < low) return null;
@@ -432,8 +432,7 @@ function renderTable() {
   filtered.sort((a, b) => {
     const va = a[sortCol] ?? -Infinity;
     const vb = b[sortCol] ?? -Infinity;
-    if (vb === va) return 0;
-    return (vb - va) * sortDir > 0 ? 1 : -1;
+    return (va - vb) * sortDir;
   });
 
   const tbody = document.getElementById('tableBody');
@@ -605,16 +604,20 @@ function renderHighAmpList() {
 }
 
 // ── API ──────────────────────────────────────────────────────
-async function fetchTWSE() {
-  const r = await fetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL');
-  if (!r.ok) throw new Error('TWSE HTTP ' + r.status);
+const PROXY = 'https://corsproxy.io/?';
+
+async function proxiedFetch(url) {
+  const r = await fetch(PROXY + encodeURIComponent(url));
+  if (!r.ok) throw new Error('HTTP ' + r.status);
   return r.json();
 }
 
+async function fetchTWSE() {
+  return proxiedFetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL');
+}
+
 async function fetchTPEx() {
-  const r = await fetch('https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes');
-  if (!r.ok) throw new Error('TPEx HTTP ' + r.status);
-  return r.json();
+  return proxiedFetch('https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes');
 }
 
 async function loadAll() {
