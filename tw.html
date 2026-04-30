@@ -30,10 +30,12 @@ body { background: var(--bg-deep); color: var(--text-primary);
 @keyframes pulse    { 0%,100%{opacity:1} 50%{opacity:.3} }
 @keyframes fadeIn   { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:translateY(0)} }
 @keyframes glow     { 0%,100%{box-shadow:0 0 4px rgba(255,34,68,.4)} 50%{box-shadow:0 0 10px rgba(255,34,68,.9)} }
+@keyframes spin     { to{transform:rotate(360deg)} }
 
 .pulse   { animation: pulse 2s ease-in-out infinite; }
 .fade-in { animation: fadeIn .2s ease; }
 .glow    { animation: glow 1.5s ease-in-out infinite; }
+.spin    { animation: spin .8s linear infinite; }
 
 .info-card { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:16px; }
 .cat-pill {
@@ -45,7 +47,6 @@ body { background: var(--bg-deep); color: var(--text-primary);
 .cat-pill:not(.active):hover { color:var(--text-primary); border-color:rgba(255,255,255,.2); }
 .stock-row { transition:background .15s; cursor:pointer; border-bottom:1px solid var(--border); }
 .stock-row:hover { background:var(--bg-hover); }
-.expand-row { background:linear-gradient(to right,rgba(0,255,136,.04),transparent); border-left:2px solid var(--accent-green); }
 .badge {
   display:inline-flex; align-items:center; padding:2px 7px;
   border-radius:4px; font-size:10px; font-weight:600; white-space:nowrap; margin-right:3px;
@@ -60,10 +61,93 @@ td { padding:9px 8px; }
 .sort-arr.active { opacity:1; color:var(--accent-green); }
 .breadth-bar { height:8px; border-radius:4px; overflow:hidden; display:flex; margin:6px 0; }
 .index-chip { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:600; }
+
+/* Modal */
+#stockModal {
+  display:none; position:fixed; inset:0; z-index:1000;
+  background:rgba(0,0,0,.88); backdrop-filter:blur(8px);
+  overflow-y:auto; padding:16px;
+}
+.modal-box {
+  max-width:1160px; margin:0 auto;
+  background:var(--bg-card); border:1px solid var(--border);
+  border-radius:16px; overflow:hidden;
+}
+.analysis-card {
+  background:rgba(0,0,0,.35); border:1px solid var(--border);
+  border-radius:10px; padding:12px; margin-bottom:10px;
+}
+.analysis-card h4 { font-size:12px; font-weight:700; margin-bottom:8px; color:var(--text-secondary); letter-spacing:.06em; }
+.stat-row { display:flex; justify-content:space-between; align-items:center; padding:3px 0; font-size:12px; }
+.stat-label { color:var(--text-secondary); }
 </style>
 </head>
 <body>
 
+<!-- Modal -->
+<div id="stockModal" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box" onclick="event.stopPropagation()">
+
+    <!-- Modal header -->
+    <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:rgba(0,0,0,.4);">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span id="mName" style="font-size:20px;font-weight:800;"></span>
+        <span id="mCode" style="font-size:13px;color:var(--text-secondary);"></span>
+        <span id="mCat" style="font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(68,136,255,.15);color:#4488ff;border:1px solid rgba(68,136,255,.3);"></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div id="mPriceArea"></div>
+        <button onclick="closeModal()" style="padding:5px 13px;border-radius:7px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);color:var(--text-secondary);cursor:pointer;font-size:13px;">✕</button>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div id="mLoading" style="padding:60px;text-align:center;color:var(--text-secondary);font-size:14px;">
+      <div style="width:20px;height:20px;border:2px solid rgba(0,255,136,.3);border-top-color:#00ff88;border-radius:50%;display:inline-block;" class="spin"></div>
+      <div style="margin-top:12px;">載入K線資料中...</div>
+    </div>
+
+    <!-- Error -->
+    <div id="mError" style="display:none;padding:40px;text-align:center;color:var(--accent-gold);font-size:13px;"></div>
+
+    <!-- Content -->
+    <div id="mContent" style="display:none;">
+      <div style="display:grid;grid-template-columns:1fr 300px;min-height:520px;">
+
+        <!-- Left: chart canvas -->
+        <div style="padding:12px;border-right:1px solid var(--border);">
+          <canvas id="mainChart" style="width:100%;display:block;"></canvas>
+        </div>
+
+        <!-- Right: analysis -->
+        <div style="padding:12px;overflow-y:auto;max-height:620px;">
+
+          <div id="mWinRate" class="analysis-card" style="text-align:center;border-color:rgba(0,255,136,.2);background:rgba(0,255,136,.04);"></div>
+
+          <div id="mTechSummary" class="analysis-card">
+            <h4>📊 技術分析</h4>
+          </div>
+
+          <div id="mPatterns" class="analysis-card">
+            <h4>🕯️ K線形態</h4>
+          </div>
+
+          <div id="mOperation" class="analysis-card">
+            <h4>🎯 操作建議</h4>
+          </div>
+
+          <div id="mChip" class="analysis-card">
+            <h4>📦 成交量分析</h4>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Progress bar -->
 <div style="position:fixed;top:0;left:0;width:100%;z-index:200;height:2px;background:rgba(255,255,255,.05);">
   <div id="refreshBar" style="height:100%;background:linear-gradient(to right,#00ff88,#4488ff);width:100%;transition:width 1s linear;"></div>
 </div>
@@ -91,14 +175,11 @@ td { padding:9px 8px; }
 
 <main style="max-width:1700px;margin:0 auto;padding:20px 24px;">
 
-  <!-- 評分說明 -->
-  <div id="criteriaCards" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">
-    <!-- filled by JS based on mode -->
-  </div>
+  <div id="criteriaCards" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;"></div>
 
   <div style="display:grid;grid-template-columns:1fr 290px;gap:20px;">
 
-    <!-- 左側表格 -->
+    <!-- Left table -->
     <div>
       <div style="margin-bottom:10px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
@@ -106,14 +187,20 @@ td { padding:9px 8px; }
             <button class="cat-pill active" onclick="setCategory('all',this)">全部</button>
             <button class="cat-pill" onclick="setCategory('twse',this)">上市</button>
             <button class="cat-pill" onclick="setCategory('tpex',this)">上櫃</button>
-            <button class="cat-pill" onclick="setCategory('electronics',this)">電子</button>
+            <button class="cat-pill" onclick="setCategory('semicon',this)">半導體</button>
+            <button class="cat-pill" onclick="setCategory('memory',this)">記憶體</button>
+            <button class="cat-pill" onclick="setCategory('icdesign',this)">IC設計</button>
+            <button class="cat-pill" onclick="setCategory('aichain',this)">AI產業鏈</button>
+            <button class="cat-pill" onclick="setCategory('panel',this)">面板/光電</button>
             <button class="cat-pill" onclick="setCategory('finance',this)">金融</button>
             <button class="cat-pill" onclick="setCategory('biotech',this)">生技</button>
             <button class="cat-pill" onclick="setCategory('shipping',this)">航運</button>
+            <button class="cat-pill" onclick="setCategory('steel',this)">鋼鐵</button>
+            <button class="cat-pill" onclick="setCategory('petrochem',this)">石化</button>
             <button class="cat-pill" onclick="setCategory('traditional',this)">傳產</button>
           </div>
           <div style="margin-left:12px;font-size:11px;color:#8888aa;white-space:nowrap;flex-shrink:0;">
-            點擊展開 · <span id="countdown">300</span>s 刷新
+            點擊查看分析 · <span id="countdown">300</span>s 刷新
           </div>
         </div>
       </div>
@@ -141,7 +228,7 @@ td { padding:9px 8px; }
       <p style="font-size:11px;color:#4a4a6a;margin-top:8px;text-align:right;">資料：TWSE OpenAPI · TPEx OpenAPI · 不構成投資建議</p>
     </div>
 
-    <!-- 右側邊欄 -->
+    <!-- Right sidebar -->
     <div style="display:flex;flex-direction:column;gap:16px;">
 
       <div class="info-card">
@@ -182,14 +269,50 @@ td { padding:9px 8px; }
 const PROXY   = 'https://corsproxy.io/?';
 const LS_SNAP = 'tw_snap_v3';
 
+// ── Category sets ──────────────────────────────────────────────
+const MEMORY_SET  = new Set(['2344','2408','4256','3576','5234','3031']);
+const AI_SET      = new Set(['2317','2382','2356','3231','6669','2308','3017','3324',
+  '1626','4977','2421','6409','5483','3023','6214','2312','2301','2353','2357','2324',
+  '3042','6456','5315','2345','3526','6515','6547','3563','8086','6197','5471']);
+const SEMICON_SET = new Set(['2330','2303','2329','2332','2337','2338','2347',
+  '2351','2352','2363','2369','2376','2406','2416','2422','2423','2429','2433',
+  '2434','3711','2325','6274','8046','3702','5347','2328']);
+const ICDESIGN_SET= new Set(['2454','2379','2388','3034','3035','3044','3673',
+  '4961','6182','6533','5274','3707','4906','3227','3704','3706','3443',
+  '6415','6488','6770','3414','3546','6278','3714','6550','4919','3416']);
+const PANEL_SET   = new Set(['2409','3481','2439','2448','6147','2441','4952','3008','4990','2438']);
+const STEEL_SET   = new Set(['2002','2008','2010','2015','2017','2020','2022','9958']);
+const PETRO_SET   = new Set(['1301','1303','1304','1305','1308','1309','1310','1314','1326','6505','1312']);
+const BIOTECH_SET = new Set(['4763','4766','4741','4960','6547','6643','6452','4144','4205','1794','4720','6669']);
+
+const SPECIFIC_CATS = ['semicon','memory','icdesign','aichain','panel','finance','biotech','shipping','steel','petrochem'];
+
+const CAT_LABEL = {
+  semicon:'半導體', memory:'記憶體', icdesign:'IC設計', aichain:'AI產業鏈',
+  panel:'面板/光電', finance:'金融', biotech:'生技', shipping:'航運',
+  steel:'鋼鐵', petrochem:'石化', traditional:'傳產',
+};
+const CAT_DESC = {
+  semicon:'晶圓代工、封裝測試、半導體設備',
+  memory:'DRAM、NAND Flash、記憶體模組',
+  icdesign:'無廠設計（Fabless）、驅動IC、電源IC',
+  aichain:'AI伺服器、散熱、連接器、PCB、CoWoS供應鏈',
+  panel:'LCD/OLED面板、驅動IC、光電',
+  finance:'銀行、保險、券商、金控',
+  biotech:'新藥研發、醫材、CRO/CMO',
+  shipping:'海運、空運、散裝、貨代',
+  steel:'粗鋼、不鏽鋼、特殊鋼',
+  petrochem:'石化、塑化、煉油、橡膠',
+  traditional:'紡織、食品、其他傳產',
+};
+
 // ── State ──────────────────────────────────────────────────────
 let allStocks   = [];
-let prevMap     = {};   // code → { volume, changePct }
+let prevMap     = {};
 let hasPrev     = false;
 let currentCat  = 'all';
 let sortCol     = 'score';
 let sortDir     = -1;
-let expandedCode= null;
 let cdVal       = 300;
 let cdInterval  = null;
 
@@ -243,17 +366,30 @@ function saveSnap(twDate, processed) {
 
 // ── Category ────────────────────────────────────────────────────
 function getStockCat(code) {
+  if (MEMORY_SET.has(code))   return 'memory';
+  if (AI_SET.has(code))       return 'aichain';
+  if (SEMICON_SET.has(code))  return 'semicon';
+  if (ICDESIGN_SET.has(code)) return 'icdesign';
+  if (PANEL_SET.has(code))    return 'panel';
+  if (STEEL_SET.has(code))    return 'steel';
+  if (PETRO_SET.has(code))    return 'petrochem';
+  if (BIOTECH_SET.has(code))  return 'biotech';
   const n = parseInt(code);
-  if ((n>=2300&&n<=2399)||(n>=3000&&n<=3999)||(n>=6000&&n<=6999)) return 'electronics';
-  if ((n>=2800&&n<=2899)||(n>=5800&&n<=5899))                      return 'finance';
-  if (n>=2600&&n<=2699)                                             return 'shipping';
-  if ((n>=1700&&n<=1799)||(n>=4700&&n<=4799))                      return 'biotech';
+  if (n>=2300&&n<=2399)                          return 'semicon';
+  if (n>=2400&&n<=2499)                          return 'panel';
+  if ((n>=3000&&n<=3699)||(n>=6000&&n<=6999))   return 'icdesign';
+  if ((n>=2800&&n<=2899)||(n>=5800&&n<=5899))   return 'finance';
+  if (n>=2600&&n<=2699)                          return 'shipping';
+  if ((n>=1700&&n<=1799)||(n>=4700&&n<=4799))   return 'biotech';
+  if (n>=2000&&n<=2099)                          return 'steel';
+  if (n>=1300&&n<=1399)                          return 'petrochem';
   return 'traditional';
 }
 function catFilter(s) {
   if (currentCat==='all')  return true;
   if (currentCat==='twse') return s.market==='TWSE';
   if (currentCat==='tpex') return s.market==='TPEx';
+  if (currentCat==='traditional') return !SPECIFIC_CATS.includes(s.cat);
   return s.cat===currentCat;
 }
 
@@ -281,45 +417,34 @@ function processRaw(raw, market) {
   const limitDown = Math.round(prevClose*0.9*100)/100;
   const valueYi   = value/1e8;
 
-  // Previous day data
   const prev      = prevMap[code];
   const volRatio  = (hasPrev && prev?.volume>0 && volume>0) ? volume/prev.volume : null;
   const consecDays= (hasPrev && prev?.changePct>=9.5 && changePct>=9.5) ? 2 : (changePct>=9.5 ? 1 : 0);
 
-  // ── Scoring ────────────────────────────────────────────────
   let score;
   if (hasPrev) {
-    // Enhanced mode: 漲幅(20)+成交額(12)+振幅(12)+甜蜜價(8)+量比(28)+連板(20) = 100
     const sChange = Math.min(20, Math.max(0, changePct*2));
     const sValue  = valueYi<=0 ? 0 : Math.min(12, Math.max(0, (Math.log10(Math.max(.001,valueYi))+2)/4*12));
     const sAmp    = Math.min(12, Math.max(0, amplitude*1.2));
     let   sPrice  = 0;
-    if (close>=5&&close<=50)                              sPrice=8;
+    if (close>=5&&close<=50) sPrice=8;
     else if ((close>=3&&close<5)||(close>50&&close<=150)) sPrice=4;
-    else if (close>150&&close<=500)                        sPrice=2;
-
+    else if (close>150&&close<=500) sPrice=2;
     let sVol = 0;
     if (volRatio!==null) {
-      if (volRatio>=5)      sVol=28;
-      else if (volRatio>=3) sVol=22;
-      else if (volRatio>=2) sVol=14;
-      else if (volRatio>=1.5) sVol=7;
+      if (volRatio>=5) sVol=28; else if (volRatio>=3) sVol=22;
+      else if (volRatio>=2) sVol=14; else if (volRatio>=1.5) sVol=7;
     }
-
-    let sConsec = 0;
-    if      (consecDays>=2) sConsec=20;
-    else if (consecDays===1) sConsec=6;
-
+    let sConsec = consecDays>=2 ? 20 : consecDays===1 ? 6 : 0;
     score = Math.round(sChange+sValue+sAmp+sPrice+sVol+sConsec);
   } else {
-    // Base mode: 漲幅(35)+成交額(25)+振幅(25)+甜蜜價(15) = 100
     const sChange = Math.min(35, Math.max(0, changePct*3.5));
     const sValue  = valueYi<=0 ? 0 : Math.min(25, Math.max(0, (Math.log10(Math.max(.001,valueYi))+2)/4*25));
     const sAmp    = Math.min(25, Math.max(0, amplitude*2.5));
     let   sPrice  = 0;
-    if (close>=5&&close<=50)                              sPrice=15;
+    if (close>=5&&close<=50) sPrice=15;
     else if ((close>=3&&close<5)||(close>50&&close<=150)) sPrice=8;
-    else if (close>150&&close<=500)                        sPrice=4;
+    else if (close>150&&close<=500) sPrice=4;
     score = Math.round(sChange+sValue+sAmp+sPrice);
   }
 
@@ -340,7 +465,6 @@ function signals(s) {
   else if (s.changePct>=5)    out.push(['強勢',   'background:rgba(0,255,136,.12);color:#00ff88;border:1px solid rgba(0,255,136,.35)']);
   if (s.amplitude>=8)          out.push(['大振幅', 'background:rgba(68,136,255,.12);color:#4488ff;border:1px solid rgba(68,136,255,.35)']);
   if (s.close>=5&&s.close<=30) out.push(['甜蜜價', 'background:rgba(170,68,255,.12);color:#aa44ff;border:1px solid rgba(170,68,255,.35)']);
-  // Prev-data badges
   if (hasPrev) {
     if (s.consecDays>=2)
       out.push([`▲${s.consecDays}連板`, 'background:rgba(255,34,68,.3);color:#ff2244;border:1px solid rgba(255,34,68,.7);font-weight:800;']);
@@ -352,7 +476,6 @@ function signals(s) {
   return out;
 }
 
-// ── Score style ─────────────────────────────────────────────────
 function scoreStyle(sc) {
   if (sc>=75) return 'background:rgba(0,255,136,.15);border:2px solid rgba(0,255,136,.5);color:#00ff88';
   if (sc>=55) return 'background:rgba(247,201,72,.12);border:2px solid rgba(247,201,72,.4);color:#f7c948';
@@ -378,15 +501,16 @@ function renderTable() {
     const volLine  = s.volRatio!=null
       ? `<div style="font-size:10px;color:${s.volRatio>=3?'#f7c948':s.volRatio>=1.5?'#d4ab30':'var(--text-secondary)'};">${s.volRatio.toFixed(1)}x</div>`
       : '';
+    const catLbl   = CAT_LABEL[s.cat] || s.cat;
 
     const tr = document.createElement('tr');
     tr.className='stock-row fade-in';
-    tr.onclick=()=>toggleRow(s.code);
+    tr.onclick=()=>openModal(s);
     tr.innerHTML=`
       <td style="text-align:center;"><div class="score-circle" style="${scoreStyle(s.score)}">${s.score}</div></td>
       <td>
         <div style="font-weight:600;font-size:13px;">${s.name}</div>
-        <div style="font-size:11px;color:var(--text-secondary);">${s.code} · ${s.market}</div>
+        <div style="font-size:11px;color:var(--text-secondary);">${s.code} · ${s.market} · <span style="color:#4488ff;">${catLbl}</span></div>
       </td>
       <td style="text-align:right;font-weight:600;font-size:14px;">${fmtPrice(s.close)}</td>
       <td style="text-align:right;">
@@ -398,46 +522,18 @@ function renderTable() {
       <td>${sigs.map(([t,st])=>`<span class="badge" style="${st}">${t}</span>`).join('')}</td>
     `;
     tbody.appendChild(tr);
-
-    if (expandedCode===s.code) {
-      const distToLimit = s.close<s.limitUp
-        ? '+'+((s.limitUp-s.close)/s.close*100).toFixed(1)+'%' : '已漲停';
-      const lotsStr = s.volume>0 ? Math.round(s.volume/1000).toLocaleString()+'張' : '--';
-      const volRatioStr = s.volRatio!=null ? s.volRatio.toFixed(2)+'x　'+(s.volRatio>=3?'🔥爆量':s.volRatio>=1.5?'量增':'') : '--（首次載入）';
-
-      const expTr = document.createElement('tr');
-      expTr.className='expand-row';
-      expTr.innerHTML=`
-        <td colspan="7" style="padding:12px 16px;">
-          <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:12px;line-height:2.2;">
-            <div><span style="color:var(--text-secondary);">前日收</span>&nbsp;<strong>${fmtPrice(s.prevClose)}</strong></div>
-            <div><span style="color:var(--text-secondary);">開盤</span>&nbsp;<strong>${fmtPrice(s.open)}</strong></div>
-            <div><span style="color:var(--text-secondary);">最高</span>&nbsp;<strong style="color:var(--accent-green);">${fmtPrice(s.high)}</strong></div>
-            <div><span style="color:var(--text-secondary);">最低</span>&nbsp;<strong style="color:var(--accent-red);">${fmtPrice(s.low)}</strong></div>
-            <div><span style="color:var(--text-secondary);">漲停價</span>&nbsp;<strong style="color:#ff4466;">${fmtPrice(s.limitUp)}</strong></div>
-            <div><span style="color:var(--text-secondary);">跌停價</span>&nbsp;<strong style="color:#4488ff;">${fmtPrice(s.limitDown)}</strong></div>
-            <div><span style="color:var(--text-secondary);">距漲停</span>&nbsp;<strong>${distToLimit}</strong></div>
-            <div><span style="color:var(--text-secondary);">成交</span>&nbsp;<strong>${lotsStr}</strong></div>
-            <div><span style="color:var(--text-secondary);">筆數</span>&nbsp;<strong>${s.txns>0?s.txns.toLocaleString():'--'}</strong></div>
-            <div><span style="color:var(--text-secondary);">量比(今/昨)</span>&nbsp;<strong style="color:#f7c948;">${volRatioStr}</strong></div>
-            ${s.consecDays>=2?`<div><span style="color:var(--text-secondary);">連板</span>&nbsp;<strong style="color:#ff2244;">▲${s.consecDays}連板</strong></div>`:''}
-          </div>
-        </td>
-      `;
-      tbody.appendChild(expTr);
-    }
   });
 }
 
 // ── Render: breadth ─────────────────────────────────────────────
 function renderBreadth() {
   if (!allStocks.length) return;
-  const up      = allStocks.filter(s=>s.changePct>0.01).length;
-  const down    = allStocks.filter(s=>s.changePct<-0.01).length;
-  const flat    = allStocks.length-up-down;
-  const limUp   = allStocks.filter(s=>s.changePct>=9.5).length;
-  const limDn   = allStocks.filter(s=>s.changePct<=-9.5).length;
-  const total   = allStocks.length;
+  const up    = allStocks.filter(s=>s.changePct>0.01).length;
+  const down  = allStocks.filter(s=>s.changePct<-0.01).length;
+  const flat  = allStocks.length-up-down;
+  const limUp = allStocks.filter(s=>s.changePct>=9.5).length;
+  const limDn = allStocks.filter(s=>s.changePct<=-9.5).length;
+  const total = allStocks.length;
   const upW=Math.round(up/total*100), dnW=Math.round(down/total*100);
 
   document.getElementById('breadthSubtitle').textContent=`${total.toLocaleString()} 支股票`;
@@ -472,13 +568,12 @@ function renderBreadth() {
   `;
 }
 
-// ── Render: limit-up list ───────────────────────────────────────
 function renderLimitUpList() {
   const items=allStocks.filter(s=>s.changePct>=9.5).sort((a,b)=>b.changePct-a.changePct).slice(0,15);
   const el=document.getElementById('limitUpList');
   if(!items.length){el.innerHTML=`<div style="text-align:center;padding:16px;color:var(--text-secondary);font-size:12px;">今日暫無漲停股</div>`;return;}
   el.innerHTML=items.map(s=>`
-    <div class="sidebar-item" onclick="window.open('https://tw.stock.yahoo.com/quote/${s.code}','_blank')">
+    <div class="sidebar-item" onclick="openModal(allStocks.find(x=>x.code==='${s.code}'))">
       <div>
         <div style="font-weight:600;font-size:12px;">${s.name} <span style="color:var(--text-secondary);font-size:10px;">${s.code}</span>
           ${s.consecDays>=2?`<span style="background:rgba(255,34,68,.25);color:#ff2244;border:1px solid rgba(255,34,68,.5);border-radius:3px;font-size:9px;font-weight:800;padding:1px 4px;margin-left:3px;">▲${s.consecDays}連</span>`:''}
@@ -493,7 +588,6 @@ function renderLimitUpList() {
   `).join('');
 }
 
-// ── Render: consecutive limit-up list ───────────────────────────
 function renderConsecList() {
   const el=document.getElementById('consecList');
   if (!hasPrev) {
@@ -503,7 +597,7 @@ function renderConsecList() {
   const items=allStocks.filter(s=>s.consecDays>=2).sort((a,b)=>b.score-a.score).slice(0,12);
   if(!items.length){el.innerHTML=`<div style="text-align:center;padding:16px;color:var(--text-secondary);font-size:12px;">今日暫無連板股</div>`;return;}
   el.innerHTML=items.map(s=>`
-    <div class="sidebar-item" onclick="window.open('https://tw.stock.yahoo.com/quote/${s.code}','_blank')">
+    <div class="sidebar-item" onclick="openModal(allStocks.find(x=>x.code==='${s.code}'))">
       <div>
         <div style="font-weight:600;font-size:12px;">${s.name} <span style="color:var(--text-secondary);font-size:10px;">${s.code}</span></div>
         <div style="font-size:11px;color:var(--text-secondary);">${fmtPrice(s.close)} · ${s.market}${s.volRatio!=null?' · 量'+s.volRatio.toFixed(1)+'x':''}</div>
@@ -516,7 +610,6 @@ function renderConsecList() {
   `).join('');
 }
 
-// ── Render: criteria cards ──────────────────────────────────────
 function renderCriteriaCards() {
   const el = document.getElementById('criteriaCards');
   if (hasPrev) {
@@ -536,8 +629,7 @@ function renderCriteriaCards() {
       <div class="info-card" style="border-color:rgba(170,68,255,.2);">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><span style="font-size:18px;">💎</span><span style="font-weight:700;color:#aa44ff;font-size:14px;">振幅+甜蜜價 20分</span></div>
         <p style="font-size:12px;color:#8888aa;line-height:1.6;">振幅 12分 + 甜蜜價位 8分。高波動低價股流動性佳，易進出。</p>
-      </div>
-    `;
+      </div>`;
     document.getElementById('formulaPanel').innerHTML=`
       <div style="display:flex;justify-content:space-between;"><span>漲幅動能</span><span style="color:#ff4466;font-weight:600;">20 分</span></div>
       <div style="display:flex;justify-content:space-between;"><span>成交量比(今/昨)</span><span style="color:#f7c948;font-weight:600;">28 分</span></div>
@@ -547,8 +639,7 @@ function renderCriteriaCards() {
       <div style="display:flex;justify-content:space-between;"><span>甜蜜價位(5~50元)</span><span style="color:#aa44ff;font-weight:600;">8 分</span></div>
       <div style="border-top:1px solid rgba(0,255,136,.1);margin-top:4px;padding-top:4px;display:flex;justify-content:space-between;font-weight:700;">
         <span style="color:#e8e8ff;">總分</span><span style="color:#00ff88;">100 分</span>
-      </div>
-    `;
+      </div>`;
     document.getElementById('modeBadge').textContent='量比+連板模式 · 含昨日比對';
     document.getElementById('modeBadge').style.color='#00ff88';
     document.getElementById('modeBadge').style.borderColor='rgba(0,255,136,.3)';
@@ -569,8 +660,7 @@ function renderCriteriaCards() {
       <div class="info-card" style="border-color:rgba(170,68,255,.2);">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><span style="font-size:18px;">💎</span><span style="font-weight:700;color:#aa44ff;font-size:14px;">甜蜜價位 15分</span></div>
         <p style="font-size:12px;color:#8888aa;line-height:1.6;">股價 5~50元 = 15分。首次載入，明日啟用量比+連板。</p>
-      </div>
-    `;
+      </div>`;
     document.getElementById('formulaPanel').innerHTML=`
       <div style="display:flex;justify-content:space-between;"><span>漲幅動能</span><span style="color:#ff4466;font-weight:600;">35 分</span></div>
       <div style="display:flex;justify-content:space-between;"><span>成交活躍</span><span style="color:#00ff88;font-weight:600;">25 分</span></div>
@@ -578,29 +668,25 @@ function renderCriteriaCards() {
       <div style="display:flex;justify-content:space-between;"><span>甜蜜價位</span><span style="color:#aa44ff;font-weight:600;">15 分</span></div>
       <div style="border-top:1px solid rgba(0,255,136,.1);margin-top:4px;padding-top:4px;display:flex;justify-content:space-between;font-weight:700;">
         <span style="color:#e8e8ff;">總分</span><span style="color:#00ff88;">100 分</span>
-      </div>
-    `;
+      </div>`;
     document.getElementById('modeBadge').textContent='基礎模式 · 首次載入中';
   }
 }
 
-// ── Render: index chips in header ───────────────────────────────
 function renderIndexChips(indexData) {
   if (!indexData || !indexData.length) return;
   const taiex = indexData.find(d => d['指數']==='發行量加權股價指數');
   if (!taiex) return;
-  const up   = taiex['漲跌']==='+';
-  const pct  = parseNum(taiex['漲跌百分比']);
-  const pts  = parseNum(taiex['漲跌點數']);
-  const idx  = parseNum(taiex['收盤指數'].replace(/,/g,''));
+  const up  = taiex['漲跌']==='+';
+  const pct = parseNum(taiex['漲跌百分比']);
+  const idx = parseNum((taiex['收盤指數']||'').replace(/,/g,''));
   const color= up ? 'var(--accent-green)' : 'var(--accent-red)';
   document.getElementById('indexChips').innerHTML=`
     <div class="index-chip" style="background:rgba(0,0,0,.3);border:1px solid var(--border);">
       <span style="color:var(--text-secondary);">加權</span>
       <span style="color:${color};font-weight:700;">${idx?idx.toLocaleString('en',{maximumFractionDigits:2}):'--'}</span>
       <span style="color:${color};">${up?'+':''}${pct!=null?pct.toFixed(2):'--'}%</span>
-    </div>
-  `;
+    </div>`;
 }
 
 // ── API ──────────────────────────────────────────────────────────
@@ -612,15 +698,537 @@ async function proxiedFetch(url) {
 async function fetchTWSE()  { return proxiedFetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'); }
 async function fetchTPEx()  { return proxiedFetch('https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes'); }
 async function fetchIndex() { return proxiedFetch('https://openapi.twse.com.tw/v1/exchangeReport/MI_INDEX'); }
+async function fetchYahoo(code, market) {
+  const suffix = market === 'TPEx' ? '.TWO' : '.TW';
+  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${code}${suffix}?range=4mo&interval=1d`;
+  return proxiedFetch(url);
+}
+
+// ── Technical indicators ─────────────────────────────────────────
+function calcMA(arr, period) {
+  return arr.map((_, i) => {
+    if (i < period - 1) return null;
+    return arr.slice(i - period + 1, i + 1).reduce((a, b) => a + (b||0), 0) / period;
+  });
+}
+
+function calcKD(high, low, close, period=9) {
+  const n = close.length;
+  const K = new Array(n).fill(null);
+  const D = new Array(n).fill(null);
+  let prevK = 50, prevD = 50;
+  for (let i = period - 1; i < n; i++) {
+    const h9 = Math.max(...high.slice(i - period + 1, i + 1).filter(v=>v!=null));
+    const l9 = Math.min(...low.slice(i - period + 1, i + 1).filter(v=>v!=null));
+    const rsv = h9 === l9 ? 50 : (close[i] - l9) / (h9 - l9) * 100;
+    const k = prevK * 2/3 + rsv * 1/3;
+    const d = prevD * 2/3 + k * 1/3;
+    K[i] = k; D[i] = d;
+    prevK = k; prevD = d;
+  }
+  return { K, D };
+}
+
+function calcMACD(close, fast=12, slow=26, signal=9) {
+  const n = close.length;
+  function ema(arr, period) {
+    const out = new Array(n).fill(null);
+    const k = 2 / (period + 1);
+    let val = null;
+    for (let i = 0; i < n; i++) {
+      if (arr[i] == null) continue;
+      val = val == null ? arr[i] : arr[i] * k + val * (1 - k);
+      out[i] = val;
+    }
+    return out;
+  }
+  const ema12 = ema(close, fast);
+  const ema26 = ema(close, slow);
+  const dif   = ema12.map((v, i) => v != null && ema26[i] != null ? v - ema26[i] : null);
+  const dea   = ema(dif, signal);
+  const bar   = dif.map((v, i) => v != null && dea[i] != null ? (v - dea[i]) * 2 : null);
+  return { dif, dea, bar };
+}
+
+function detectPatterns(open, high, low, close) {
+  const n = close.length;
+  if (n < 3) return [];
+  const patterns = [];
+  const last = n - 1;
+  const body  = i => Math.abs(close[i] - open[i]);
+  const range = i => high[i] - low[i];
+  const isUp  = i => close[i] >= open[i];
+  const isDoji= i => range(i) > 0 && body(i) / range(i) < 0.1;
+
+  // 紅三軍
+  if (isUp(last) && isUp(last-1) && isUp(last-2) &&
+      close[last] > close[last-1] && close[last-1] > close[last-2] &&
+      open[last]  > open[last-1]  && open[last-1]  > open[last-2])
+    patterns.push({ name:'紅三軍', type:'bullish', desc:'三連陽，多方主導' });
+
+  // 三隻烏鴉
+  if (!isUp(last) && !isUp(last-1) && !isUp(last-2) &&
+      close[last] < close[last-1] && close[last-1] < close[last-2])
+    patterns.push({ name:'三隻烏鴉', type:'bearish', desc:'三連陰，空方主導' });
+
+  // 十字線
+  if (isDoji(last))
+    patterns.push({ name:'十字線', type:'neutral', desc:'多空均衡，方向待確認' });
+
+  // 晨星
+  if (last >= 2) {
+    const bigDown= !isUp(last-2) && range(last-2)>0 && body(last-2)/range(last-2)>0.6;
+    const small  = range(last-1)>0 && body(last-1)/range(last-1)<0.3;
+    const bigUp  = isUp(last) && range(last)>0 && body(last)/range(last)>0.5;
+    if (bigDown && small && bigUp)
+      patterns.push({ name:'晨星', type:'bullish', desc:'底部反轉，看漲信號' });
+  }
+
+  // 夜星
+  if (last >= 2) {
+    const bigUp  = isUp(last-2) && range(last-2)>0 && body(last-2)/range(last-2)>0.6;
+    const small  = range(last-1)>0 && body(last-1)/range(last-1)<0.3;
+    const bigDn  = !isUp(last) && range(last)>0 && body(last)/range(last)>0.5;
+    if (bigUp && small && bigDn)
+      patterns.push({ name:'夜星', type:'bearish', desc:'頂部反轉，看跌信號' });
+  }
+
+  // 錘子線
+  {
+    const lowerShadow = (isUp(last) ? open[last] : close[last]) - low[last];
+    const upperShadow = high[last] - (isUp(last) ? close[last] : open[last]);
+    if (body(last) > 0 && lowerShadow > body(last) * 2 && upperShadow < body(last) * 0.5 && !isDoji(last))
+      patterns.push({ name:'錘子線', type:'bullish', desc:'下影線長，潛在支撐' });
+  }
+
+  // 吊頸線
+  {
+    const lowerShadow = (isUp(last) ? open[last] : close[last]) - low[last];
+    const upperShadow = high[last] - (isUp(last) ? close[last] : open[last]);
+    if (body(last) > 0 && upperShadow > body(last) * 2 && lowerShadow < body(last) * 0.5 && !isDoji(last))
+      patterns.push({ name:'射擊之星', type:'bearish', desc:'上影線長，潛在壓力' });
+  }
+
+  return patterns;
+}
+
+function calcWinRate(close, ma5, ma20, ma60, K, D, dif, dea, bar, patterns) {
+  const n = close.length;
+  const last = n - 1;
+  let score = 50;
+  const bulls = [], bears = [];
+
+  const c = close[last];
+  if (ma5[last]  != null && c > ma5[last])  { score += 5;  bulls.push('站上MA5'); }
+  if (ma20[last] != null && c > ma20[last]) { score += 8;  bulls.push('站上MA20'); }
+  if (ma60[last] != null && c > ma60[last]) { score += 8;  bulls.push('站上MA60'); }
+  if (ma5[last]  != null && ma20[last] != null && ma5[last]  > ma20[last]) { score += 5; bulls.push('MA5>MA20'); }
+  if (ma20[last] != null && ma60[last] != null && ma20[last] > ma60[last]) { score += 5; bulls.push('MA20>MA60'); }
+
+  const kL = K[last], dL = D[last];
+  if (kL != null && dL != null) {
+    if (kL > dL && kL < 80) { score += 8; bulls.push('KD金叉'); }
+    if (kL < dL && kL > 20) { score -= 5; bears.push('KD死叉'); }
+    if (kL < 20)            { score += 5; bulls.push('KD超賣反彈'); }
+    if (kL > 80)            { score -= 6; bears.push('KD超買'); }
+  }
+
+  const difL = dif[last], deaL = dea[last], barL = bar[last];
+  if (difL != null && deaL != null) {
+    if (difL > deaL)          { score += 8; bulls.push('MACD金叉'); }
+    else                      { score -= 5; bears.push('MACD死叉'); }
+    if (difL > 0)             { score += 5; bulls.push('DIF在零軸上'); }
+    if (difL < 0 && deaL < 0) { score -= 5; bears.push('雙線在零軸下'); }
+    if (barL != null && barL > 0 && bar[last-1] != null && barL > bar[last-1]) { score += 3; bulls.push('紅柱擴大'); }
+  }
+
+  for (const p of patterns) {
+    if (p.type === 'bullish') { score += 7; bulls.push(p.name); }
+    if (p.type === 'bearish') { score -= 7; bears.push(p.name); }
+  }
+
+  if (n >= 5) {
+    const recentUp = close.slice(-5).filter((v,i,a) => i>0 && v>a[i-1]).length;
+    if (recentUp >= 3) { score += 4; bulls.push('近5日偏多'); }
+    else if (recentUp <= 1) { score -= 4; bears.push('近5日偏空'); }
+  }
+
+  score = Math.max(5, Math.min(95, Math.round(score)));
+  return { score, bulls, bears };
+}
+
+// ── Draw chart (single canvas, 4 sections) ───────────────────────
+function drawMainChart(canvas, timestamps, open, high, low, close, volume, ma5, ma20, ma60, K, D, dif, dea, bar) {
+  const PR = window.devicePixelRatio || 1;
+  const W  = canvas.clientWidth;
+
+  const SEC = { kline: 260, vol: 70, kd: 80, macd: 80 };
+  const TOTAL_H = SEC.kline + SEC.vol + SEC.kd + SEC.macd;
+  canvas.width  = Math.round(W * PR);
+  canvas.height = Math.round(TOTAL_H * PR);
+  canvas.style.height = TOTAL_H + 'px';
+
+  const ctx = canvas.getContext('2d');
+  ctx.scale(PR, PR);
+  ctx.clearRect(0, 0, W, TOTAL_H);
+
+  const ML = 54, MR = 6;
+  const n  = close.length;
+  const bw = (W - ML - MR) / n;
+
+  // Section Y offsets
+  const YOFF = {
+    kline: 0,
+    vol:   SEC.kline,
+    kd:    SEC.kline + SEC.vol,
+    macd:  SEC.kline + SEC.vol + SEC.kd,
+  };
+
+  const MT = 14, MB = 6, MB_MACD = 16;
+
+  // Helper: map value to Y within a section
+  function toY(v, minV, maxV, secY, secH, mt=MT, mb=MB) {
+    const ratio = maxV === minV ? 0.5 : (v - minV) / (maxV - minV);
+    return secY + mt + (1 - ratio) * (secH - mt - mb);
+  }
+
+  function drawGrid(secY, secH) {
+    ctx.strokeStyle = 'rgba(255,255,255,.04)';
+    ctx.lineWidth = 1;
+    for (let i = 1; i <= 3; i++) {
+      const y = secY + MT + (secH - MT - MB) * i / 4;
+      ctx.beginPath(); ctx.moveTo(ML, y); ctx.lineTo(W - MR, y); ctx.stroke();
+    }
+  }
+
+  function drawSectionBg(secY, secH) {
+    ctx.fillStyle = '#05050f';
+    ctx.fillRect(ML, secY, W - ML - MR, secH);
+  }
+
+  function drawLabel(text, x, y, color='#3a3a5a', size=9, align='right') {
+    ctx.fillStyle = color; ctx.font = `${size}px sans-serif`; ctx.textAlign = align;
+    ctx.fillText(text, x, y);
+  }
+
+  function drawPriceAxis(minP, maxP, secY, secH, steps=4) {
+    for (let i = 0; i <= steps; i++) {
+      const p = maxP - (maxP - minP) * i / steps;
+      const y = toY(p, minP, maxP, secY, secH);
+      const lbl = p >= 1000 ? p.toFixed(0) : p >= 100 ? p.toFixed(1) : p.toFixed(2);
+      drawLabel(lbl, ML - 2, y + 3);
+    }
+  }
+
+  // ── K-line section ─────────────────────────────────────
+  const kPad = (Math.max(...high) - Math.min(...low)) * 0.05 || 1;
+  const kMin = Math.min(...low)  - kPad;
+  const kMax = Math.max(...high) + kPad;
+
+  drawSectionBg(YOFF.kline, SEC.kline);
+  drawGrid(YOFF.kline, SEC.kline);
+  drawPriceAxis(kMin, kMax, YOFF.kline, SEC.kline);
+
+  // Candles
+  for (let i = 0; i < n; i++) {
+    if (close[i] == null || open[i] == null) continue;
+    const x  = ML + (i + 0.5) * bw;
+    const up = close[i] >= open[i];
+    const color = up ? '#ff4466' : '#44aaff';
+    const yO = toY(open[i],  kMin, kMax, YOFF.kline, SEC.kline);
+    const yC = toY(close[i], kMin, kMax, YOFF.kline, SEC.kline);
+    const yH = toY(high[i],  kMin, kMax, YOFF.kline, SEC.kline);
+    const yL = toY(low[i],   kMin, kMax, YOFF.kline, SEC.kline);
+
+    ctx.strokeStyle = color; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, yH); ctx.lineTo(x, yL); ctx.stroke();
+
+    const bodyTop = Math.min(yO, yC);
+    const bodyH   = Math.max(1, Math.abs(yC - yO));
+    ctx.fillStyle = color;
+    ctx.fillRect(x - bw * 0.35, bodyTop, bw * 0.7, bodyH);
+  }
+
+  // MA lines
+  function drawLine(arr, color, lw=1) {
+    ctx.strokeStyle = color; ctx.lineWidth = lw;
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < n; i++) {
+      if (arr[i] == null) continue;
+      const x = ML + (i + 0.5) * bw;
+      const y = toY(arr[i], kMin, kMax, YOFF.kline, SEC.kline);
+      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  drawLine(ma5, '#f7c948');
+  drawLine(ma20, '#00ff88');
+  drawLine(ma60, '#aa44ff');
+
+  // MA legend
+  ctx.textAlign = 'left'; ctx.font = '9px sans-serif';
+  [['MA5','#f7c948'],['MA20','#00ff88'],['MA60','#aa44ff']].forEach(([lbl,c],i) => {
+    ctx.fillStyle = c; ctx.fillText(lbl, ML + 4 + i * 40, YOFF.kline + 10);
+  });
+  drawLabel('K線', W - MR, YOFF.kline + 10);
+
+  // ── Volume section ─────────────────────────────────────
+  const volMax = Math.max(...volume.filter(v=>v!=null)) || 1;
+  drawSectionBg(YOFF.vol, SEC.vol);
+
+  for (let i = 0; i < n; i++) {
+    if (volume[i] == null || close[i] == null) continue;
+    const x  = ML + i * bw;
+    const up = close[i] >= (open[i] ?? close[i]);
+    const h  = volume[i] / volMax * (SEC.vol - MT - 4);
+    ctx.fillStyle = up ? 'rgba(255,68,102,.55)' : 'rgba(68,170,255,.55)';
+    ctx.fillRect(x + 1, YOFF.vol + SEC.vol - 4 - h, bw - 2, h);
+  }
+  drawLabel('VOL', W - MR, YOFF.vol + 10);
+
+  // ── KD section ─────────────────────────────────────────
+  drawSectionBg(YOFF.kd, SEC.kd);
+
+  [20, 50, 80].forEach(v => {
+    const y = toY(v, 0, 100, YOFF.kd, SEC.kd);
+    ctx.strokeStyle = 'rgba(255,255,255,.05)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(ML, y); ctx.lineTo(W - MR, y); ctx.stroke();
+    drawLabel(v, ML - 2, y + 3);
+  });
+
+  function drawKDLine(arr, color) {
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < n; i++) {
+      if (arr[i] == null) continue;
+      const x = ML + (i + 0.5) * bw;
+      const y = toY(Math.min(100, Math.max(0, arr[i])), 0, 100, YOFF.kd, SEC.kd);
+      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  drawKDLine(K, '#f7c948');
+  drawKDLine(D, '#4488ff');
+
+  drawLabel('KD(9,3,3)', W - MR, YOFF.kd + 10);
+  ctx.textAlign = 'left'; ctx.font = '9px sans-serif';
+  ctx.fillStyle = '#f7c948'; ctx.fillText('K', ML + 4, YOFF.kd + 10);
+  ctx.fillStyle = '#4488ff'; ctx.fillText('D', ML + 16, YOFF.kd + 10);
+
+  // ── MACD section ────────────────────────────────────────
+  drawSectionBg(YOFF.macd, SEC.macd);
+
+  const allMacdVals = [...dif, ...dea, ...bar].filter(v => v != null).map(Math.abs);
+  const macdMax = Math.max(...allMacdVals) || 1;
+  const midY    = YOFF.macd + MT + (SEC.macd - MT - MB_MACD) / 2;
+
+  ctx.strokeStyle = 'rgba(255,255,255,.08)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(ML, midY); ctx.lineTo(W - MR, midY); ctx.stroke();
+
+  for (let i = 0; i < n; i++) {
+    if (bar[i] == null) continue;
+    const x  = ML + i * bw;
+    const bh = bar[i] / macdMax * (SEC.macd - MT - MB_MACD) / 2;
+    ctx.fillStyle = bar[i] >= 0 ? 'rgba(255,68,102,.55)' : 'rgba(68,170,255,.55)';
+    if (bar[i] >= 0) ctx.fillRect(x + 1, midY - bh, bw - 2, bh);
+    else             ctx.fillRect(x + 1, midY, bw - 2, -bh);
+  }
+
+  function drawMACDLine(arr, color) {
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < n; i++) {
+      if (arr[i] == null) continue;
+      const x  = ML + (i + 0.5) * bw;
+      const bh = arr[i] / macdMax * (SEC.macd - MT - MB_MACD) / 2;
+      const y  = midY - bh;
+      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  drawMACDLine(dif, '#f7c948');
+  drawMACDLine(dea, '#00ff88');
+  drawLabel('MACD(12,26,9)', W - MR, YOFF.macd + 10);
+
+  // Date labels
+  const step = Math.max(1, Math.floor(n / 7));
+  ctx.fillStyle = '#3a3a5a'; ctx.font = '8px sans-serif'; ctx.textAlign = 'center';
+  for (let i = 0; i < n; i += step) {
+    if (!timestamps[i]) continue;
+    const d = new Date(timestamps[i] * 1000);
+    ctx.fillText(`${d.getMonth()+1}/${d.getDate()}`, ML + (i + 0.5) * bw, YOFF.macd + SEC.macd - 2);
+  }
+}
+
+// ── Modal ────────────────────────────────────────────────────────
+function closeModal() {
+  document.getElementById('stockModal').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+async function openModal(s) {
+  if (!s) return;
+  document.body.style.overflow = 'hidden';
+  const modal = document.getElementById('stockModal');
+  modal.style.display = 'block';
+
+  // Header
+  document.getElementById('mName').textContent = s.name;
+  document.getElementById('mCode').textContent = `${s.code} · ${s.market}`;
+  document.getElementById('mCat').textContent  = CAT_LABEL[s.cat] || s.cat;
+  const pctColor = colorPct(s.changePct);
+  document.getElementById('mPriceArea').innerHTML = `
+    <div style="font-size:22px;font-weight:800;">${fmtPrice(s.close)}</div>
+    <div style="font-size:13px;color:${pctColor};font-weight:600;">${fmtPct(s.changePct)} ${s.change!=null?(s.change>=0?'+':'')+fmtPrice(s.change):''}</div>`;
+
+  // Show loading
+  document.getElementById('mLoading').style.display = 'block';
+  document.getElementById('mContent').style.display = 'none';
+  document.getElementById('mError').style.display   = 'none';
+
+  try {
+    const raw   = await fetchYahoo(s.code, s.market);
+    const res   = raw?.chart?.result?.[0];
+    if (!res) throw new Error('無K線資料');
+
+    const ts    = res.timestamp || [];
+    const q     = res.indicators?.quote?.[0] || {};
+    const opens  = q.open  || [];
+    const highs  = q.high  || [];
+    const lows   = q.low   || [];
+    const closes = q.close || [];
+    const vols   = q.volume|| [];
+
+    // Filter nulls
+    const valid = ts.map((_,i) => closes[i] != null && highs[i] != null && lows[i] != null);
+    const T  = ts.filter((_,i)    => valid[i]);
+    const O  = opens.filter((_,i) => valid[i]);
+    const H  = highs.filter((_,i) => valid[i]);
+    const L  = lows.filter((_,i)  => valid[i]);
+    const C  = closes.filter((_,i)=> valid[i]);
+    const V  = vols.filter((_,i)  => valid[i]).map(v => v || 0);
+
+    if (!C.length) throw new Error('歷史資料為空');
+
+    const ma5  = calcMA(C, 5);
+    const ma20 = calcMA(C, 20);
+    const ma60 = calcMA(C, 60);
+    const { K, D } = calcKD(H, L, C);
+    const { dif, dea, bar } = calcMACD(C);
+    const patterns = detectPatterns(O, H, L, C);
+    const { score: wr, bulls, bears } = calcWinRate(C, ma5, ma20, ma60, K, D, dif, dea, bar, patterns);
+
+    // Show content
+    document.getElementById('mLoading').style.display  = 'none';
+    document.getElementById('mContent').style.display  = 'block';
+
+    // Draw chart after layout paint
+    requestAnimationFrame(() => {
+      const canvas = document.getElementById('mainChart');
+      drawMainChart(canvas, T, O, H, L, C, V, ma5, ma20, ma60, K, D, dif, dea, bar);
+    });
+
+    // Win rate
+    const wrColor = wr >= 65 ? '#00ff88' : wr >= 50 ? '#f7c948' : '#ff4466';
+    document.getElementById('mWinRate').innerHTML = `
+      <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">技術面勝率估算</div>
+      <div style="font-size:38px;font-weight:800;color:${wrColor};">${wr}%</div>
+      <div style="font-size:10px;color:var(--text-secondary);margin-top:2px;">多因子技術指標加總 · 不構成投資建議</div>
+      ${bulls.length ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;justify-content:center;">${bulls.slice(0,4).map(b=>`<span style="font-size:10px;background:rgba(0,255,136,.1);color:#00ff88;border:1px solid rgba(0,255,136,.25);border-radius:4px;padding:1px 6px;">${b}</span>`).join('')}</div>` : ''}
+      ${bears.length ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;justify-content:center;">${bears.slice(0,3).map(b=>`<span style="font-size:10px;background:rgba(255,68,102,.1);color:#ff4466;border:1px solid rgba(255,68,102,.25);border-radius:4px;padding:1px 6px;">${b}</span>`).join('')}</div>` : ''}`;
+
+    // Technical summary
+    const last  = C.length - 1;
+    const c     = C[last];
+    const kLast = K[last], dLast = D[last];
+    const difL  = dif[last], deaL = dea[last];
+    const trend = [ma5[last],ma20[last],ma60[last]].filter(m=>m&&c>m).length;
+    const trendStr = trend>=2 ? '多方趨勢 ▲' : trend===1 ? '震盪偏多 →' : '空方趨勢 ▼';
+    const trendColor= trend>=2 ? '#00ff88' : trend===1 ? '#f7c948' : '#ff4466';
+    const recentVol5 = V.slice(-5);
+    const avgVol5 = recentVol5.reduce((a,b)=>a+b,0)/recentVol5.length||1;
+    const volStat = V[last]>avgVol5*1.5?'放量':'V[last]<avgVol5*0.7'?'縮量':'量平';
+
+    document.getElementById('mTechSummary').innerHTML = `
+      <h4 style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--text-secondary);letter-spacing:.06em;">📊 技術分析</h4>
+      <div class="stat-row"><span class="stat-label">趨勢</span><span style="color:${trendColor};font-weight:700;">${trendStr}</span></div>
+      <div class="stat-row"><span class="stat-label">均線結構</span><span>${[ma5[last]&&c>ma5[last]?'上MA5':'',ma20[last]&&c>ma20[last]?'上MA20':'',ma60[last]&&c>ma60[last]?'上MA60':''].filter(Boolean).join(' · ')||'均線以下'}</span></div>
+      <div class="stat-row"><span class="stat-label">KD(9,3,3)</span><span style="color:${kLast&&dLast&&kLast>dLast?'#00ff88':'#ff4466'};">${kLast?`K:${kLast.toFixed(1)} D:${dLast.toFixed(1)} ${kLast>dLast?'金叉▲':'死叉▼'}`:'--'}</span></div>
+      <div class="stat-row"><span class="stat-label">MACD</span><span style="color:${difL&&deaL&&difL>deaL?'#00ff88':'#ff4466'};">${difL?`DIF:${difL.toFixed(3)} ${difL>deaL?'金叉':'死叉'}`:'--'}</span></div>
+      <div class="stat-row"><span class="stat-label">成交量</span><span>${V[last]>avgVol5*1.5?'🔥放量':'V[last]<avgVol5*0.7'?'縮量':'量平'}</span></div>
+      <div class="stat-row"><span class="stat-label">前日收</span><span>${fmtPrice(s.prevClose)}</span></div>
+      <div class="stat-row"><span class="stat-label">今日振幅</span><span>${s.amplitude.toFixed(2)}%</span></div>
+      <div class="stat-row"><span class="stat-label">漲停價</span><span style="color:#ff4466;">${fmtPrice(s.limitUp)}</span></div>
+      <div class="stat-row"><span class="stat-label">距漲停</span><span>${c<s.limitUp?'+'+((s.limitUp-c)/c*100).toFixed(1)+'%':'已漲停'}</span></div>`;
+
+    // Patterns
+    const patternHTML = patterns.length
+      ? patterns.map(p => {
+          const c2 = p.type==='bullish'?'#00ff88':p.type==='bearish'?'#ff4466':'#f7c948';
+          const bg = p.type==='bullish'?'rgba(0,255,136,.08)':p.type==='bearish'?'rgba(255,68,102,.08)':'rgba(247,201,72,.08)';
+          return `<div style="background:${bg};border:1px solid ${c2}33;border-radius:6px;padding:6px 10px;margin-bottom:6px;">
+            <div style="color:${c2};font-weight:700;font-size:12px;">${p.type==='bullish'?'▲':'▼'} ${p.name}</div>
+            <div style="color:var(--text-secondary);font-size:11px;margin-top:2px;">${p.desc}</div>
+          </div>`;
+        }).join('')
+      : `<div style="color:var(--text-secondary);font-size:12px;text-align:center;padding:8px;">近期無明顯形態信號</div>`;
+    document.getElementById('mPatterns').innerHTML = `<h4 style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--text-secondary);letter-spacing:.06em;">🕯️ K線形態</h4>${patternHTML}`;
+
+    // Operation suggestion
+    const recent10L = Math.min(...L.slice(-10));
+    const recent10H = Math.max(...H.slice(-10));
+    const support   = ma20[last] ? Math.min(recent10L, ma20[last]) : recent10L;
+    const stopLoss  = support * 0.97;
+    const risk      = c - stopLoss;
+    const t1        = c + risk * 1.5;
+    const t2        = c + risk * 3;
+    const isLong    = trend >= 1;
+    document.getElementById('mOperation').innerHTML = `
+      <h4 style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--text-secondary);letter-spacing:.06em;">🎯 操作建議</h4>
+      <div style="background:${isLong?'rgba(0,255,136,.08)':'rgba(255,68,102,.08)'};border:1px solid ${isLong?'rgba(0,255,136,.2)':'rgba(255,68,102,.2)'};border-radius:8px;padding:8px;margin-bottom:8px;text-align:center;">
+        <span style="color:${isLong?'#00ff88':'#ff4466'};font-weight:800;font-size:14px;">${isLong?'偏多操作':'偏空觀望'}</span>
+      </div>
+      <div class="stat-row"><span class="stat-label">進場區間</span><span style="color:#f7c948;">${fmtPrice(c*0.98)} ~ ${fmtPrice(c*1.01)}</span></div>
+      <div class="stat-row"><span class="stat-label">停損</span><span style="color:#ff4466;">${fmtPrice(stopLoss)}</span></div>
+      <div class="stat-row"><span class="stat-label">目標一</span><span style="color:#00ff88;">${fmtPrice(t1)}</span></div>
+      <div class="stat-row"><span class="stat-label">目標二</span><span style="color:#00ff88;">${fmtPrice(t2)}</span></div>
+      <div style="font-size:10px;color:#4a4a6a;margin-top:8px;line-height:1.5;">以MA均線/近期低點估算，僅供參考。務必依個人風控紀律操作。</div>`;
+
+    // Chip / volume analysis
+    const vol5Avg = V.slice(-5).reduce((a,b)=>a+b,0)/5||1;
+    const vol20Avg= V.slice(-20).reduce((a,b)=>a+b,0)/20||1;
+    const todayVR = V[last]/vol20Avg;
+    const rangePct= (c-recent10L)/(recent10H-recent10L||1)*100;
+    document.getElementById('mChip').innerHTML = `
+      <h4 style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--text-secondary);letter-spacing:.06em;">📦 成交量分析</h4>
+      <div class="stat-row"><span class="stat-label">今量/20日均量</span><span style="color:${todayVR>=2?'#f7c948':todayVR>=1.2?'#00ff88':'var(--text-secondary)'};">${todayVR.toFixed(2)}x ${todayVR>=2?'🔥爆量':todayVR>=1.2?'放量':todayVR<0.7?'縮量':'量平'}</span></div>
+      <div class="stat-row"><span class="stat-label">近5日均量</span><span>${(vol5Avg/1e6).toFixed(1)} 萬張</span></div>
+      <div class="stat-row"><span class="stat-label">10日價格位置</span>
+        <span style="color:${rangePct>70?'#ff4466':rangePct>30?'#f7c948':'#00ff88'};">
+          ${rangePct>70?'高點附近':rangePct>50?'偏高':'rangePct>30'?'中性':'低點附近'} (${rangePct.toFixed(0)}%)
+        </span>
+      </div>
+      <div class="stat-row"><span class="stat-label">板塊</span><span style="color:#4488ff;">${CAT_DESC[s.cat]||'--'}</span></div>
+      <div class="stat-row"><span class="stat-label">成交筆數</span><span>${s.txns>0?s.txns.toLocaleString():'--'}</span></div>`;
+
+  } catch(err) {
+    document.getElementById('mLoading').style.display = 'none';
+    document.getElementById('mError').style.display   = 'block';
+    document.getElementById('mError').innerHTML = `
+      <div style="font-size:28px;margin-bottom:12px;">📡</div>
+      <div style="color:#f7c948;font-weight:600;margin-bottom:8px;">K線資料載入失敗</div>
+      <div style="font-size:12px;color:var(--text-secondary);">${err.message}</div>
+      <div style="font-size:11px;color:#4a4a6a;margin-top:8px;">Yahoo Finance / corsproxy 可能暫時無法連線</div>`;
+  }
+}
 
 // ── Main load ────────────────────────────────────────────────────
 async function loadAll() {
   setStatus('載入中...');
-
-  // Load prev snapshot from localStorage
   const snap = loadSnap();
-
-  // Fetch all data in parallel
   const [twseRes, tpexRes, idxRes] = await Promise.allSettled([fetchTWSE(), fetchTPEx(), fetchIndex()]);
 
   const twseRaw = twseRes.status==='fulfilled' ? twseRes.value : [];
@@ -637,10 +1245,7 @@ async function loadAll() {
     return;
   }
 
-  // Determine today's trading date from data
   const todayDate = getTWDate(twseRaw) || getTWDate(tpexRaw);
-
-  // Set up prevMap if we have a previous snapshot from a DIFFERENT trading day
   prevMap = {};
   hasPrev = false;
   if (snap && snap.date && snap.date !== todayDate && snap.stocks?.length) {
@@ -648,7 +1253,6 @@ async function loadAll() {
     hasPrev = true;
   }
 
-  // Process stocks
   const processed = [
     ...(Array.isArray(twseRaw)?twseRaw:[]).map(r=>processRaw(r,'TWSE')).filter(Boolean),
     ...(Array.isArray(tpexRaw)?tpexRaw:[]).map(r=>processRaw(r,'TPEx')).filter(Boolean),
@@ -656,12 +1260,8 @@ async function loadAll() {
   processed.sort((a,b)=>b.score-a.score);
   allStocks = processed;
 
-  // Save today's snapshot (only if we got a new trading day's data)
-  if (!snap || snap.date !== todayDate) {
-    saveSnap(todayDate, processed);
-  }
+  if (!snap || snap.date !== todayDate) saveSnap(todayDate, processed);
 
-  // Render everything
   renderCriteriaCards();
   renderTable();
   renderBreadth();
@@ -680,12 +1280,11 @@ async function loadAll() {
   setStatus(parts.length ? `${parts.join('+')}失敗 · ${modeStr}` : `${allStocks.length} 支 · ${modeStr}`);
 }
 
-// ── Events ───────────────────────────────────────────────────────
+// ── Events / helpers ─────────────────────────────────────────────
 function setCategory(cat, el) {
   currentCat=cat;
   document.querySelectorAll('.cat-pill').forEach(b=>b.classList.remove('active'));
   el.classList.add('active');
-  expandedCode=null;
   renderTable();
 }
 function sortBy(col) {
@@ -696,8 +1295,7 @@ function sortBy(col) {
   if(el){el.classList.add('active');el.textContent=sortDir===-1?'↓':'↑';}
   renderTable();
 }
-function toggleRow(code) { expandedCode=expandedCode===code?null:code; renderTable(); }
-function setStatus(text,error=false) {
+function setStatus(text, error=false) {
   document.getElementById('statusText').textContent=text;
   document.getElementById('statusDot').style.background=error?'var(--accent-red)':'var(--accent-green)';
 }
@@ -717,7 +1315,8 @@ function startCountdown() {
 }
 function refresh() { loadAll().then(startCountdown); }
 
-// ── Init ─────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
+
 loadAll().then(startCountdown);
 </script>
 </body>
