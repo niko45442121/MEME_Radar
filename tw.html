@@ -62,12 +62,14 @@ td { padding:9px 8px; }
 .breadth-bar { height:8px; border-radius:4px; overflow:hidden; display:flex; margin:6px 0; }
 .index-chip { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:600; }
 
-/* Modal */
-#stockModal {
+/* Modals */
+#stockModal, #sectorModal {
   display:none; position:fixed; inset:0; z-index:1000;
   background:rgba(0,0,0,.88); backdrop-filter:blur(8px);
   overflow-y:auto; padding:16px;
 }
+.heat-tile { transition:transform .15s, box-shadow .15s; cursor:pointer; }
+.heat-tile:hover { transform:scale(1.04); box-shadow:0 4px 20px rgba(0,0,0,.5); }
 .modal-box {
   max-width:1160px; margin:0 auto;
   background:var(--bg-card); border:1px solid var(--border);
@@ -84,7 +86,24 @@ td { padding:9px 8px; }
 </head>
 <body>
 
-<!-- Modal -->
+<!-- Sector Heatmap Modal -->
+<div id="sectorModal" onclick="if(event.target===this)closeSectorModal()">
+  <div style="max-width:980px;margin:0 auto;background:#0d0d1f;border:1px solid #1e1e3a;border-radius:16px;overflow:hidden;" onclick="event.stopPropagation()">
+    <div style="padding:14px 18px;border-bottom:1px solid #1e1e3a;display:flex;align-items:center;justify-content:space-between;background:rgba(0,0,0,.4);">
+      <div>
+        <span style="font-size:18px;font-weight:800;">🗺️ 板塊輪動地圖</span>
+        <span id="sectorSubtitle" style="font-size:11px;color:#8888aa;margin-left:12px;"></span>
+      </div>
+      <button onclick="closeSectorModal()" style="padding:5px 13px;border-radius:7px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);color:#8888aa;cursor:pointer;font-size:13px;">✕</button>
+    </div>
+    <div style="padding:16px 18px;">
+      <div id="sectorGrid" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;"></div>
+      <div id="sectorTable"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Stock Detail Modal -->
 <div id="stockModal" onclick="if(event.target===this)closeModal()">
   <div class="modal-box" onclick="event.stopPropagation()">
 
@@ -168,6 +187,7 @@ td { padding:9px 8px; }
         <span id="statusText">載入中...</span>
       </div>
       <span style="font-size:11px;color:#8888aa;" id="dataTimeEl"></span>
+      <button onclick="openSectorMap()" style="padding:4px 12px;border-radius:6px;background:rgba(68,136,255,.1);border:1px solid rgba(68,136,255,.3);color:#4488ff;font-size:12px;cursor:pointer;">🗺️ 板塊地圖</button>
       <button onclick="refresh()" style="padding:4px 12px;border-radius:6px;background:rgba(0,255,136,.1);border:1px solid rgba(0,255,136,.3);color:#00ff88;font-size:12px;cursor:pointer;">↻ 刷新</button>
     </div>
   </div>
@@ -1489,7 +1509,122 @@ function startCountdown() {
 }
 function refresh() { loadAll().then(startCountdown); }
 
-document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
+// ── Sector Heatmap ───────────────────────────────────────────────
+function heatStyle(pct) {
+  if (pct >=  5) return { bg:'rgba(220,20,50,.82)',  border:'rgba(255,60,90,.9)',  txt:'#fff' };
+  if (pct >=  3) return { bg:'rgba(200,40,65,.60)',  border:'rgba(255,80,110,.7)', txt:'#fff' };
+  if (pct >=  1) return { bg:'rgba(160,30,55,.35)',  border:'rgba(220,70,95,.4)',  txt:'#ffaaaa' };
+  if (pct >=  0) return { bg:'rgba(140,20,45,.15)',  border:'rgba(200,60,85,.2)',  txt:'#ff9999' };
+  if (pct >= -1) return { bg:'rgba(30,80,200,.18)',  border:'rgba(68,136,255,.25)',txt:'#99bbff' };
+  if (pct >= -3) return { bg:'rgba(30,70,190,.40)',  border:'rgba(68,136,255,.5)', txt:'#bbccff' };
+  return            { bg:'rgba(20,55,170,.65)',  border:'rgba(68,136,255,.75)',txt:'#cce0ff' };
+}
+
+function computeSectorStats() {
+  const allCats = [...SPECIFIC_CATS, 'traditional'];
+  const map = {};
+  for (const cat of allCats) map[cat] = { stocks:[], totalValue:0, limitUp:0 };
+  for (const s of allStocks) {
+    const cat = SPECIFIC_CATS.includes(s.cat) ? s.cat : 'traditional';
+    map[cat].stocks.push(s);
+    map[cat].totalValue += s.valueYi || 0;
+    if (s.changePct >= 9.5) map[cat].limitUp++;
+  }
+  return Object.entries(map)
+    .filter(([, d]) => d.stocks.length > 0)
+    .map(([cat, d]) => {
+      const n = d.stocks.length;
+      const avgChange = d.stocks.reduce((sum, x) => sum + x.changePct, 0) / n;
+      const avgRS = taiexPct != null
+        ? d.stocks.reduce((sum, x) => sum + (x.rs || 0), 0) / n : null;
+      const up   = d.stocks.filter(x => x.changePct >  0.1).length;
+      const down = d.stocks.filter(x => x.changePct < -0.1).length;
+      const top3 = [...d.stocks].sort((a,b) => b.changePct - a.changePct).slice(0,3);
+      return { cat, label:CAT_LABEL[cat]||cat, count:n, up, down,
+        limitUp:d.limitUp, avgChange, avgRS, totalValue:d.totalValue, top3 };
+    })
+    .sort((a,b) => b.avgChange - a.avgChange);
+}
+
+function openSectorMap() {
+  if (!allStocks.length) return;
+  document.body.style.overflow = 'hidden';
+  document.getElementById('sectorModal').style.display = 'block';
+
+  const stats  = computeSectorStats();
+  const maxVal = Math.max(...stats.map(s => s.totalValue), 1);
+
+  document.getElementById('sectorSubtitle').textContent =
+    `${allStocks.length} 支 · ${stats.length} 板塊` +
+    (taiexPct != null ? ` · 大盤${taiexPct>0?'+':''}${taiexPct.toFixed(2)}%` : '');
+
+  // ── Heatmap tiles ──────────────────────────────────────────
+  document.getElementById('sectorGrid').innerHTML = stats.map(s => {
+    const { bg, border, txt } = heatStyle(s.avgChange);
+    const flex = Math.round(s.totalValue / maxVal * 70 + 18);
+    const rsStr = s.avgRS != null
+      ? `<div style="font-size:10px;opacity:.75;margin-top:2px;">vs大盤${s.avgRS>0?'+':''}${s.avgRS.toFixed(2)}%</div>` : '';
+    const limBadge = s.limitUp > 0
+      ? `<span style="font-size:9px;background:rgba(255,34,68,.28);border:1px solid rgba(255,34,68,.5);border-radius:3px;padding:1px 5px;margin-left:5px;">停${s.limitUp}</span>` : '';
+    return `
+      <div class="heat-tile" onclick="sectorMapJump('${s.cat}')"
+        style="flex:${flex} 1 130px;min-width:128px;min-height:108px;
+               background:${bg};border:1px solid ${border};
+               border-radius:10px;padding:12px 13px;position:relative;overflow:hidden;">
+        <div style="font-size:24px;font-weight:800;color:${txt};line-height:1;">${s.avgChange>0?'+':''}${s.avgChange.toFixed(2)}%</div>
+        <div style="font-size:14px;font-weight:700;color:${txt};margin:5px 0 4px;">${s.label}${limBadge}</div>
+        <div style="font-size:10px;color:${txt};opacity:.8;">
+          <span style="color:#66ee99">▲${s.up}</span>&nbsp;<span style="color:#88aaff">▼${s.down}</span>&nbsp;·&nbsp;${s.count}支&nbsp;·&nbsp;${fmtYi(s.totalValue)}
+        </div>
+        ${rsStr}
+        <div style="position:absolute;bottom:6px;right:8px;font-size:9px;opacity:.4;color:${txt};">${s.top3.map(x=>x.name).join('·')}</div>
+      </div>`;
+  }).join('');
+
+  // ── Summary table ──────────────────────────────────────────
+  document.getElementById('sectorTable').innerHTML = `
+    <div style="font-size:11px;color:#4a4a6a;margin-bottom:8px;">點擊板塊格子 → 跳至該板塊篩選</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead><tr style="border-bottom:1px solid #1e1e3a;">
+        <th style="text-align:left;padding:6px 8px;color:#8888aa;font-weight:600;">#&nbsp;板塊</th>
+        <th style="text-align:right;padding:6px;color:#8888aa;font-weight:600;">均漲跌%</th>
+        <th style="text-align:right;padding:6px;color:#8888aa;font-weight:600;">vs大盤</th>
+        <th style="text-align:right;padding:6px;color:#8888aa;font-weight:600;">漲/跌</th>
+        <th style="text-align:right;padding:6px;color:#8888aa;font-weight:600;">漲停</th>
+        <th style="text-align:right;padding:6px;color:#8888aa;font-weight:600;">成交額</th>
+        <th style="text-align:left;padding:6px;color:#8888aa;font-weight:600;">今日領漲</th>
+      </tr></thead>
+      <tbody>${stats.map((s,i) => {
+        const pc = s.avgChange >= 0 ? '#ff4466' : '#4488ff';
+        const rc = s.avgRS == null ? '#8888aa' : s.avgRS > 0 ? '#00ff88' : '#ff6688';
+        return `<tr style="border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer;" onclick="sectorMapJump('${s.cat}')"
+          onmouseover="this.style.background='#141428'" onmouseout="this.style.background=''">
+          <td style="padding:7px 8px;font-weight:600;">${i+1}. ${s.label}</td>
+          <td style="text-align:right;padding:7px 6px;color:${pc};font-weight:700;">${s.avgChange>0?'+':''}${s.avgChange.toFixed(2)}%</td>
+          <td style="text-align:right;padding:7px 6px;color:${rc};">${s.avgRS!=null?(s.avgRS>0?'+':'')+s.avgRS.toFixed(2)+'%':'--'}</td>
+          <td style="text-align:right;padding:7px 6px;"><span style="color:#66ee99">▲${s.up}</span>&nbsp;/&nbsp;<span style="color:#88aaff">▼${s.down}</span></td>
+          <td style="text-align:right;padding:7px 6px;color:${s.limitUp>0?'#ff2244':'#8888aa'};">${s.limitUp||'--'}</td>
+          <td style="text-align:right;padding:7px 6px;">${fmtYi(s.totalValue)}</td>
+          <td style="padding:7px 6px;color:#8888aa;font-size:11px;">${s.top3.map(x=>`${x.name}<span style="color:${x.changePct>0?'#ff4466':'#4488ff'}">(${x.changePct>0?'+':''}${x.changePct.toFixed(1)}%)</span>`).join(' · ')}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+}
+
+function closeSectorModal() {
+  document.getElementById('sectorModal').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+function sectorMapJump(cat) {
+  closeSectorModal();
+  const btn = document.querySelector(`#catFilters .cat-pill[onclick*="'${cat}'"]`);
+  if (btn) setCategory(cat, btn);
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeModal(); closeSectorModal(); }
+});
 
 loadAll().then(startCountdown);
 </script>
