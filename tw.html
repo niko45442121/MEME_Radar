@@ -182,6 +182,12 @@ td { padding:9px 8px; }
     <!-- Left table -->
     <div>
       <div style="margin-bottom:10px;">
+        <div style="margin-bottom:8px;">
+          <input id="searchInput" type="text" placeholder="搜尋股票名稱或代號..."
+            oninput="searchText=this.value.trim();renderTable()"
+            style="width:100%;padding:7px 12px;border-radius:8px;background:#0d0d1f;border:1px solid #1e1e3a;color:#e8e8ff;font-size:13px;outline:none;"
+            onfocus="this.style.borderColor='rgba(0,255,136,.4)'" onblur="this.style.borderColor='#1e1e3a'">
+        </div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
           <div id="catFilters" style="display:flex;gap:5px;overflow-x:auto;padding-bottom:2px;flex:1;scrollbar-width:none;">
             <button class="cat-pill active" onclick="setCategory('all',this)">全部</button>
@@ -266,7 +272,10 @@ td { padding:9px 8px; }
 
 <script>
 // ── Constants ─────────────────────────────────────────────────
-const PROXY   = 'https://corsproxy.io/?';
+const PROXIES = [
+  u => 'https://corsproxy.io/?' + encodeURIComponent(u),
+  u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
+];
 const LS_SNAP = 'tw_snap_v3';
 
 // ── Category sets ──────────────────────────────────────────────
@@ -311,9 +320,12 @@ let allStocks   = [];
 let prevMap     = {};
 let hasPrev     = false;
 let currentCat  = 'all';
+let searchText  = '';
 let sortCol     = 'score';
 let sortDir     = -1;
+let taiexPct    = null;
 let cdVal       = 300;
+let cdTotal     = 300;
 let cdInterval  = null;
 
 // ── Utilities ───────────────────────────────────────────────────
@@ -457,6 +469,13 @@ function processRaw(raw, market) {
   };
 }
 
+// ── Search filter ────────────────────────────────────────────────
+function searchFilter(s) {
+  if (!searchText) return true;
+  const q = searchText.toLowerCase();
+  return s.code.includes(q) || s.name.toLowerCase().includes(q);
+}
+
 // ── Signals / badges ────────────────────────────────────────────
 function signals(s) {
   const out = [];
@@ -465,6 +484,7 @@ function signals(s) {
   else if (s.changePct>=5)    out.push(['強勢',   'background:rgba(0,255,136,.12);color:#00ff88;border:1px solid rgba(0,255,136,.35)']);
   if (s.amplitude>=8)          out.push(['大振幅', 'background:rgba(68,136,255,.12);color:#4488ff;border:1px solid rgba(68,136,255,.35)']);
   if (s.close>=5&&s.close<=30) out.push(['甜蜜價', 'background:rgba(170,68,255,.12);color:#aa44ff;border:1px solid rgba(170,68,255,.35)']);
+  if (s.rs != null && s.rs >= 3) out.push(['跑贏大盤', 'background:rgba(0,255,136,.08);color:#00cc66;border:1px solid rgba(0,255,136,.25)']);
   if (hasPrev) {
     if (s.consecDays>=2)
       out.push([`▲${s.consecDays}連板`, 'background:rgba(255,34,68,.3);color:#ff2244;border:1px solid rgba(255,34,68,.7);font-weight:800;']);
@@ -485,13 +505,13 @@ function scoreStyle(sc) {
 
 // ── Render: main table ──────────────────────────────────────────
 function renderTable() {
-  const filtered = allStocks.filter(catFilter);
+  const filtered = allStocks.filter(s => catFilter(s) && searchFilter(s));
   filtered.sort((a,b) => (a[sortCol]??-Infinity)-(b[sortCol]??-Infinity));
   if (sortDir===-1) filtered.reverse();
 
   const tbody = document.getElementById('tableBody');
   if (!filtered.length) {
-    tbody.innerHTML=`<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-secondary);font-size:13px;">此板塊暫無資料</td></tr>`;
+    tbody.innerHTML=`<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-secondary);font-size:13px;">${searchText ? '找不到符合的股票' : '此板塊暫無資料'}</td></tr>`;
     return;
   }
   tbody.innerHTML='';
@@ -500,6 +520,9 @@ function renderTable() {
     const sigs     = signals(s);
     const volLine  = s.volRatio!=null
       ? `<div style="font-size:10px;color:${s.volRatio>=3?'#f7c948':s.volRatio>=1.5?'#d4ab30':'var(--text-secondary)'};">${s.volRatio.toFixed(1)}x</div>`
+      : '';
+    const rsLine   = s.rs != null
+      ? `<div style="font-size:10px;color:${s.rs>0?'#00cc66':s.rs<0?'#ff6688':'var(--text-secondary)'};margin-top:1px;">vs大盤${s.rs>0?'+':''}${s.rs.toFixed(1)}%</div>`
       : '';
     const catLbl   = CAT_LABEL[s.cat] || s.cat;
 
@@ -516,6 +539,7 @@ function renderTable() {
       <td style="text-align:right;">
         <div style="font-weight:700;color:${pctColor};">${fmtPct(s.changePct)}</div>
         <div style="font-size:11px;color:${pctColor};opacity:.7;">${s.change!=null?(s.change>=0?'+':'')+fmtPrice(s.change):'--'}</div>
+        ${rsLine}
       </td>
       <td style="text-align:right;font-size:12px;">${fmtYi(s.valueYi)}${volLine}</td>
       <td style="text-align:right;font-size:12px;">${s.amplitude.toFixed(1)}%</td>
@@ -681,6 +705,7 @@ function renderIndexChips(indexData) {
   const pct = parseNum(taiex['漲跌百分比']);
   const idx = parseNum((taiex['收盤指數']||'').replace(/,/g,''));
   const color= up ? 'var(--accent-green)' : 'var(--accent-red)';
+  taiexPct = pct != null ? (up ? pct : -pct) : null;
   document.getElementById('indexChips').innerHTML=`
     <div class="index-chip" style="background:rgba(0,0,0,.3);border:1px solid var(--border);">
       <span style="color:var(--text-secondary);">加權</span>
@@ -691,9 +716,15 @@ function renderIndexChips(indexData) {
 
 // ── API ──────────────────────────────────────────────────────────
 async function proxiedFetch(url) {
-  const r = await fetch(PROXY + encodeURIComponent(url));
-  if (!r.ok) throw new Error('HTTP '+r.status);
-  return r.json();
+  let lastErr;
+  for (const makeUrl of PROXIES) {
+    try {
+      const r = await fetch(makeUrl(url), { signal: AbortSignal.timeout(9000) });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return await r.json();
+    } catch(e) { lastErr = e; }
+  }
+  throw lastErr;
 }
 async function fetchTWSE()  { return proxiedFetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'); }
 async function fetchTPEx()  { return proxiedFetch('https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes'); }
@@ -1253,10 +1284,21 @@ async function loadAll() {
     hasPrev = true;
   }
 
+  // Extract TAIEX change % before processing so RS can be attached to each stock
+  taiexPct = null;
+  if (idxData.length) {
+    const t = idxData.find(d => d['指數'] === '發行量加權股價指數');
+    if (t) {
+      const raw = parseNum(t['漲跌百分比']);
+      if (raw != null) taiexPct = t['漲跌'] === '+' ? raw : -raw;
+    }
+  }
+
   const processed = [
     ...(Array.isArray(twseRaw)?twseRaw:[]).map(r=>processRaw(r,'TWSE')).filter(Boolean),
     ...(Array.isArray(tpexRaw)?tpexRaw:[]).map(r=>processRaw(r,'TPEx')).filter(Boolean),
   ];
+  processed.forEach(s => { s.rs = taiexPct != null ? s.changePct - taiexPct : null; });
   processed.sort((a,b)=>b.score-a.score);
   allStocks = processed;
 
@@ -1299,12 +1341,20 @@ function setStatus(text, error=false) {
   document.getElementById('statusText').textContent=text;
   document.getElementById('statusDot').style.background=error?'var(--accent-red)':'var(--accent-green)';
 }
+function getRefreshSecs() {
+  const now = new Date();
+  const twMins = (now.getUTCHours() * 60 + now.getUTCMinutes() + 480) % 1440;
+  return (twMins >= 540 && twMins <= 810) ? 60 : 300; // 09:00-13:30 TW = 60s, else 300s
+}
 function updateBar(v) {
   const b=document.getElementById('refreshBar');
-  if(b) b.style.width=(v/300*100)+'%';
+  if(b) b.style.width=(v/cdTotal*100)+'%';
 }
 function startCountdown() {
-  clearInterval(cdInterval); cdVal=300; updateBar(300);
+  clearInterval(cdInterval);
+  cdTotal = getRefreshSecs();
+  cdVal = cdTotal;
+  updateBar(cdVal);
   cdInterval=setInterval(()=>{
     cdVal--;
     const el=document.getElementById('countdown');
