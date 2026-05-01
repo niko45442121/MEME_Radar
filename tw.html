@@ -888,13 +888,48 @@ function calcWinRate(close, ma5, ma20, ma60, K, D, dif, dea, bar, patterns) {
   return { score, bulls, bears };
 }
 
-// ── Draw chart (single canvas, 4 sections) ───────────────────────
-function drawMainChart(canvas, timestamps, open, high, low, close, volume, ma5, ma20, ma60, K, D, dif, dea, bar) {
+function calcRSI(close, period=14) {
+  const n = close.length;
+  const rsi = new Array(n).fill(null);
+  if (n <= period) return rsi;
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = close[i] - close[i-1];
+    if (d > 0) gains += d; else losses += Math.abs(d);
+  }
+  let avgGain = gains / period, avgLoss = losses / period;
+  rsi[period] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  for (let i = period + 1; i < n; i++) {
+    const d = close[i] - close[i-1];
+    avgGain = (avgGain * (period - 1) + (d > 0 ? d : 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + (d < 0 ? Math.abs(d) : 0)) / period;
+    rsi[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  }
+  return rsi;
+}
+
+function calcBollinger(close, period=20, mult=2) {
+  const n = close.length;
+  const ma = calcMA(close, period);
+  const upper = new Array(n).fill(null);
+  const lower = new Array(n).fill(null);
+  for (let i = period - 1; i < n; i++) {
+    if (ma[i] == null) continue;
+    const slice = close.slice(i - period + 1, i + 1);
+    const std = Math.sqrt(slice.reduce((s, v) => s + Math.pow(v - ma[i], 2), 0) / period);
+    upper[i] = ma[i] + mult * std;
+    lower[i] = ma[i] - mult * std;
+  }
+  return { upper, lower };
+}
+
+// ── Draw chart (single canvas, 5 sections) ───────────────────────
+function drawMainChart(canvas, timestamps, open, high, low, close, volume, ma5, ma20, ma60, bollUpper, bollLower, K, D, dif, dea, bar, rsi) {
   const PR = window.devicePixelRatio || 1;
   const W  = canvas.clientWidth;
 
-  const SEC = { kline: 260, vol: 70, kd: 80, macd: 80 };
-  const TOTAL_H = SEC.kline + SEC.vol + SEC.kd + SEC.macd;
+  const SEC = { kline: 260, vol: 70, kd: 80, macd: 80, rsi: 70 };
+  const TOTAL_H = SEC.kline + SEC.vol + SEC.kd + SEC.macd + SEC.rsi;
   canvas.width  = Math.round(W * PR);
   canvas.height = Math.round(TOTAL_H * PR);
   canvas.style.height = TOTAL_H + 'px';
@@ -913,6 +948,7 @@ function drawMainChart(canvas, timestamps, open, high, low, close, volume, ma5, 
     vol:   SEC.kline,
     kd:    SEC.kline + SEC.vol,
     macd:  SEC.kline + SEC.vol + SEC.kd,
+    rsi:   SEC.kline + SEC.vol + SEC.kd + SEC.macd,
   };
 
   const MT = 14, MB = 6, MB_MACD = 16;
@@ -980,6 +1016,39 @@ function drawMainChart(canvas, timestamps, open, high, low, close, volume, ma5, 
     ctx.fillRect(x - bw * 0.35, bodyTop, bw * 0.7, bodyH);
   }
 
+  // Bollinger Bands overlay (drawn before MAs so MAs sit on top)
+  if (bollUpper && bollLower) {
+    // Filled band area
+    ctx.fillStyle = 'rgba(247,201,72,.05)';
+    ctx.beginPath();
+    let bStarted = false;
+    for (let i = 0; i < n; i++) {
+      if (bollUpper[i] == null) continue;
+      const x = ML + (i + 0.5) * bw;
+      const y = toY(bollUpper[i], kMin, kMax, YOFF.kline, SEC.kline);
+      if (!bStarted) { ctx.moveTo(x, y); bStarted = true; } else ctx.lineTo(x, y);
+    }
+    for (let i = n - 1; i >= 0; i--) {
+      if (bollLower[i] == null) continue;
+      ctx.lineTo(ML + (i + 0.5) * bw, toY(bollLower[i], kMin, kMax, YOFF.kline, SEC.kline));
+    }
+    ctx.closePath(); ctx.fill();
+    // Upper & lower dashed lines
+    ctx.strokeStyle = 'rgba(247,201,72,.45)'; ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    for (const band of [bollUpper, bollLower]) {
+      ctx.beginPath(); bStarted = false;
+      for (let i = 0; i < n; i++) {
+        if (band[i] == null) continue;
+        const x = ML + (i + 0.5) * bw;
+        const y = toY(band[i], kMin, kMax, YOFF.kline, SEC.kline);
+        if (!bStarted) { ctx.moveTo(x, y); bStarted = true; } else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
   // MA lines
   function drawLine(arr, color, lw=1) {
     ctx.strokeStyle = color; ctx.lineWidth = lw;
@@ -997,10 +1066,10 @@ function drawMainChart(canvas, timestamps, open, high, low, close, volume, ma5, 
   drawLine(ma20, '#00ff88');
   drawLine(ma60, '#aa44ff');
 
-  // MA legend
+  // MA + Bollinger legend
   ctx.textAlign = 'left'; ctx.font = '9px sans-serif';
-  [['MA5','#f7c948'],['MA20','#00ff88'],['MA60','#aa44ff']].forEach(([lbl,c],i) => {
-    ctx.fillStyle = c; ctx.fillText(lbl, ML + 4 + i * 40, YOFF.kline + 10);
+  [['MA5','#f7c948'],['MA20','#00ff88'],['MA60','#aa44ff'],['布林','rgba(247,201,72,.7)']].forEach(([lbl,c],i) => {
+    ctx.fillStyle = c; ctx.fillText(lbl, ML + 4 + i * 38, YOFF.kline + 10);
   });
   drawLabel('K線', W - MR, YOFF.kline + 10);
 
@@ -1084,13 +1153,49 @@ function drawMainChart(canvas, timestamps, open, high, low, close, volume, ma5, 
   drawMACDLine(dea, '#00ff88');
   drawLabel('MACD(12,26,9)', W - MR, YOFF.macd + 10);
 
-  // Date labels
+  // ── RSI section ─────────────────────────────────────────
+  drawSectionBg(YOFF.rsi, SEC.rsi);
+
+  [30, 50, 70].forEach(v => {
+    const y = toY(v, 0, 100, YOFF.rsi, SEC.rsi, MT, MB_MACD);
+    if (v === 70) {
+      ctx.fillStyle = 'rgba(255,68,102,.06)';
+      ctx.fillRect(ML, YOFF.rsi + MT, W - ML - MR, y - YOFF.rsi - MT);
+    } else if (v === 30) {
+      ctx.fillStyle = 'rgba(0,255,136,.06)';
+      ctx.fillRect(ML, y, W - ML - MR, YOFF.rsi + SEC.rsi - MB_MACD - y);
+    }
+    ctx.strokeStyle = v === 50 ? 'rgba(255,255,255,.08)' : 'rgba(255,255,255,.05)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(ML, y); ctx.lineTo(W - MR, y); ctx.stroke();
+    drawLabel(v, ML - 2, y + 3);
+  });
+
+  if (rsi && rsi.some(v => v != null)) {
+    ctx.strokeStyle = '#cc66ff'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    let rsiStarted = false;
+    for (let i = 0; i < n; i++) {
+      if (rsi[i] == null) continue;
+      const x = ML + (i + 0.5) * bw;
+      const y = toY(Math.min(100, Math.max(0, rsi[i])), 0, 100, YOFF.rsi, SEC.rsi, MT, MB_MACD);
+      if (!rsiStarted) { ctx.moveTo(x, y); rsiStarted = true; } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    const rsiLast = rsi.filter(v => v != null).slice(-1)[0];
+    ctx.textAlign = 'left'; ctx.font = '9px sans-serif';
+    ctx.fillStyle = '#cc66ff';
+    ctx.fillText(rsiLast != null ? rsiLast.toFixed(1) : '', ML + 4, YOFF.rsi + 10);
+  }
+  drawLabel('RSI(14)', W - MR, YOFF.rsi + 10);
+
+  // Date labels at bottom of RSI
   const step = Math.max(1, Math.floor(n / 7));
   ctx.fillStyle = '#3a3a5a'; ctx.font = '8px sans-serif'; ctx.textAlign = 'center';
   for (let i = 0; i < n; i += step) {
     if (!timestamps[i]) continue;
     const d = new Date(timestamps[i] * 1000);
-    ctx.fillText(`${d.getMonth()+1}/${d.getDate()}`, ML + (i + 0.5) * bw, YOFF.macd + SEC.macd - 2);
+    ctx.fillText(`${d.getMonth()+1}/${d.getDate()}`, ML + (i + 0.5) * bw, YOFF.rsi + SEC.rsi - 2);
   }
 }
 
@@ -1147,10 +1252,18 @@ async function openModal(s) {
     const ma5  = calcMA(C, 5);
     const ma20 = calcMA(C, 20);
     const ma60 = calcMA(C, 60);
+    const { upper: bollUpper, lower: bollLower } = calcBollinger(C);
+    const rsi  = calcRSI(C);
     const { K, D } = calcKD(H, L, C);
     const { dif, dea, bar } = calcMACD(C);
     const patterns = detectPatterns(O, H, L, C);
     const { score: wr, bulls, bears } = calcWinRate(C, ma5, ma20, ma60, K, D, dif, dea, bar, patterns);
+
+    // 突破偵測
+    const last = C.length - 1;
+    const breakouts = [];
+    if (C.length > 20 && C[last] > Math.max(...C.slice(-21, -1))) breakouts.push('突破20日新高');
+    if (C.length > 60 && C[last] > Math.max(...C.slice(-61, -1))) breakouts.push('突破60日新高');
 
     // Show content
     document.getElementById('mLoading').style.display  = 'none';
@@ -1159,7 +1272,7 @@ async function openModal(s) {
     // Draw chart after layout paint
     requestAnimationFrame(() => {
       const canvas = document.getElementById('mainChart');
-      drawMainChart(canvas, T, O, H, L, C, V, ma5, ma20, ma60, K, D, dif, dea, bar);
+      drawMainChart(canvas, T, O, H, L, C, V, ma5, ma20, ma60, bollUpper, bollLower, K, D, dif, dea, bar, rsi);
     });
 
     // Win rate
@@ -1168,11 +1281,11 @@ async function openModal(s) {
       <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">技術面勝率估算</div>
       <div style="font-size:38px;font-weight:800;color:${wrColor};">${wr}%</div>
       <div style="font-size:10px;color:var(--text-secondary);margin-top:2px;">多因子技術指標加總 · 不構成投資建議</div>
-      ${bulls.length ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;justify-content:center;">${bulls.slice(0,4).map(b=>`<span style="font-size:10px;background:rgba(0,255,136,.1);color:#00ff88;border:1px solid rgba(0,255,136,.25);border-radius:4px;padding:1px 6px;">${b}</span>`).join('')}</div>` : ''}
+      ${breakouts.length ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;justify-content:center;">${breakouts.map(b=>`<span style="font-size:10px;background:rgba(255,34,68,.18);color:#ff4466;border:1px solid rgba(255,34,68,.45);border-radius:4px;padding:2px 7px;font-weight:700;">🚀 ${b}</span>`).join('')}</div>` : ''}
+      ${bulls.length ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;justify-content:center;">${bulls.slice(0,4).map(b=>`<span style="font-size:10px;background:rgba(0,255,136,.1);color:#00ff88;border:1px solid rgba(0,255,136,.25);border-radius:4px;padding:1px 6px;">${b}</span>`).join('')}</div>` : ''}
       ${bears.length ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;justify-content:center;">${bears.slice(0,3).map(b=>`<span style="font-size:10px;background:rgba(255,68,102,.1);color:#ff4466;border:1px solid rgba(255,68,102,.25);border-radius:4px;padding:1px 6px;">${b}</span>`).join('')}</div>` : ''}`;
 
     // Technical summary
-    const last  = C.length - 1;
     const c     = C[last];
     const kLast = K[last], dLast = D[last];
     const difL  = dif[last], deaL = dea[last];
@@ -1181,15 +1294,26 @@ async function openModal(s) {
     const trendColor= trend>=2 ? '#00ff88' : trend===1 ? '#f7c948' : '#ff4466';
     const recentVol5 = V.slice(-5);
     const avgVol5 = recentVol5.reduce((a,b)=>a+b,0)/recentVol5.length||1;
-    const volStat = V[last]>avgVol5*1.5?'放量':'V[last]<avgVol5*0.7'?'縮量':'量平';
+    const rsiLast = rsi.filter(v => v != null).slice(-1)[0] ?? null;
+    const rsiColor = rsiLast > 70 ? '#ff4466' : rsiLast < 30 ? '#00ff88' : 'var(--text-primary)';
+    const rsiStr  = rsiLast != null ? `${rsiLast.toFixed(1)}${rsiLast>70?' (超買)':rsiLast<30?' (超賣)':''}` : '--';
+    const bias5   = ma5[last]  != null ? (c - ma5[last])  / ma5[last]  * 100 : null;
+    const bias20  = ma20[last] != null ? (c - ma20[last]) / ma20[last] * 100 : null;
+    const bias60  = ma60[last] != null ? (c - ma60[last]) / ma60[last] * 100 : null;
+    const bFmt = v => v != null ? `${v>0?'+':''}${v.toFixed(2)}%` : '--';
+    const bColor = (v, warn) => v == null ? 'var(--text-secondary)' : Math.abs(v) > warn ? '#f7c948' : 'var(--text-primary)';
 
     document.getElementById('mTechSummary').innerHTML = `
       <h4 style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--text-secondary);letter-spacing:.06em;">📊 技術分析</h4>
       <div class="stat-row"><span class="stat-label">趨勢</span><span style="color:${trendColor};font-weight:700;">${trendStr}</span></div>
       <div class="stat-row"><span class="stat-label">均線結構</span><span>${[ma5[last]&&c>ma5[last]?'上MA5':'',ma20[last]&&c>ma20[last]?'上MA20':'',ma60[last]&&c>ma60[last]?'上MA60':''].filter(Boolean).join(' · ')||'均線以下'}</span></div>
+      <div class="stat-row"><span class="stat-label">RSI(14)</span><span style="color:${rsiColor};font-weight:600;">${rsiStr}</span></div>
       <div class="stat-row"><span class="stat-label">KD(9,3,3)</span><span style="color:${kLast&&dLast&&kLast>dLast?'#00ff88':'#ff4466'};">${kLast?`K:${kLast.toFixed(1)} D:${dLast.toFixed(1)} ${kLast>dLast?'金叉▲':'死叉▼'}`:'--'}</span></div>
       <div class="stat-row"><span class="stat-label">MACD</span><span style="color:${difL&&deaL&&difL>deaL?'#00ff88':'#ff4466'};">${difL?`DIF:${difL.toFixed(3)} ${difL>deaL?'金叉':'死叉'}`:'--'}</span></div>
-      <div class="stat-row"><span class="stat-label">成交量</span><span>${V[last]>avgVol5*1.5?'🔥放量':'V[last]<avgVol5*0.7'?'縮量':'量平'}</span></div>
+      <div class="stat-row"><span class="stat-label">乖離率MA5</span><span style="color:${bColor(bias5,8)}">${bFmt(bias5)}</span></div>
+      <div class="stat-row"><span class="stat-label">乖離率MA20</span><span style="color:${bColor(bias20,12)}">${bFmt(bias20)}</span></div>
+      <div class="stat-row"><span class="stat-label">乖離率MA60</span><span style="color:${bColor(bias60,15)}">${bFmt(bias60)}</span></div>
+      <div class="stat-row"><span class="stat-label">成交量</span><span>${V[last]>avgVol5*1.5?'🔥放量':V[last]<avgVol5*0.7?'縮量':'量平'}</span></div>
       <div class="stat-row"><span class="stat-label">前日收</span><span>${fmtPrice(s.prevClose)}</span></div>
       <div class="stat-row"><span class="stat-label">今日振幅</span><span>${s.amplitude.toFixed(2)}%</span></div>
       <div class="stat-row"><span class="stat-label">漲停價</span><span style="color:#ff4466;">${fmtPrice(s.limitUp)}</span></div>
