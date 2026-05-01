@@ -293,8 +293,10 @@ td { padding:9px 8px; }
 <script>
 // ── Constants ─────────────────────────────────────────────────
 const PROXIES = [
-  u => 'https://corsproxy.io/?' + encodeURIComponent(u),
-  u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
+  { make: u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),  parse: r => r.text() },
+  { make: u => 'https://api.allorigins.win/get?url='  + encodeURIComponent(u),  parse: r => r.json().then(j => j.contents) },
+  { make: u => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u), parse: r => r.text() },
+  { make: u => 'https://corsproxy.io/?' + encodeURIComponent(u), parse: r => r.text() },
 ];
 const LS_SNAP = 'tw_snap_v3';
 
@@ -737,11 +739,15 @@ function renderIndexChips(indexData) {
 // ── API ──────────────────────────────────────────────────────────
 async function proxiedFetch(url) {
   let lastErr;
-  for (const makeUrl of PROXIES) {
+  for (const proxy of PROXIES) {
     try {
-      const r = await fetch(makeUrl(url), { signal: AbortSignal.timeout(9000) });
+      const r = await fetch(proxy.make(url), { signal: AbortSignal.timeout(9000) });
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      return await r.json();
+      const text = await proxy.parse(r);
+      if (!text || typeof text !== 'string') throw new Error('empty response');
+      const trimmed = text.trimStart();
+      if (trimmed[0] === '<') throw new Error('HTML response');
+      return JSON.parse(text);
     } catch(e) { lastErr = e; }
   }
   throw lastErr;
