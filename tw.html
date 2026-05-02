@@ -65,23 +65,40 @@ td { padding:9px 8px; }
 /* Modals */
 #stockModal, #sectorModal {
   display:none; position:fixed; inset:0; z-index:1000;
-  background:rgba(0,0,0,.88); backdrop-filter:blur(8px);
-  overflow-y:auto; padding:16px;
+  background:rgba(0,0,0,.92); backdrop-filter:blur(8px);
+  overflow-y:auto; padding:12px;
 }
 .heat-tile { transition:transform .15s, box-shadow .15s; cursor:pointer; }
 .heat-tile:hover { transform:scale(1.04); box-shadow:0 4px 20px rgba(0,0,0,.5); }
 .modal-box {
-  max-width:1160px; margin:0 auto;
-  background:var(--bg-card); border:1px solid var(--border);
-  border-radius:16px; overflow:hidden;
+  max-width:1500px; margin:0 auto;
+  background:#06061a; border:1px solid #1a1a38;
+  border-radius:12px; overflow:hidden;
 }
 .analysis-card {
-  background:rgba(0,0,0,.35); border:1px solid var(--border);
-  border-radius:10px; padding:12px; margin-bottom:10px;
+  background:rgba(0,0,0,.4); border:1px solid #1a1a38;
+  border-radius:8px; padding:10px 12px;
 }
-.analysis-card h4 { font-size:12px; font-weight:700; margin-bottom:8px; color:var(--text-secondary); letter-spacing:.06em; }
-.stat-row { display:flex; justify-content:space-between; align-items:center; padding:3px 0; font-size:12px; }
-.stat-label { color:var(--text-secondary); }
+.analysis-card h4 { font-size:11px; font-weight:700; margin:0 0 7px; color:#6666aa; letter-spacing:.07em; text-transform:uppercase; }
+.stat-row { display:flex; justify-content:space-between; align-items:center; padding:2.5px 0; font-size:11.5px; border-bottom:1px solid rgba(255,255,255,.03); }
+.stat-row:last-child { border-bottom:none; }
+.stat-label { color:#6688aa; }
+.dash-hdr-val { display:flex; flex-direction:column; }
+.dash-hdr-val .v-main { font-size:22px; font-weight:900; line-height:1.1; }
+.dash-hdr-val .v-sub  { font-size:11px; font-weight:600; margin-top:2px; }
+.dash-hdr-sep { width:1px; height:36px; background:#1a1a38; }
+.dash-info-block { font-size:11px; color:#6688aa; line-height:1.9; }
+.dash-info-block span { color:#c8c8ee; font-weight:600; }
+.signal-light { width:44px; height:44px; border-radius:50%; margin:0 auto 6px; border:2px solid; }
+.panel-title { font-size:10px; color:#6688aa; letter-spacing:.07em; margin-bottom:8px; font-weight:700; text-transform:uppercase; }
+.op-badge { display:inline-block; padding:4px 14px; border-radius:6px; font-size:13px; font-weight:800; margin-bottom:8px; }
+.tech-row { display:grid; grid-template-columns:80px 1fr; align-items:center; padding:3px 0; font-size:11px; border-bottom:1px solid rgba(255,255,255,.03); gap:6px; }
+.tech-row:last-child { border-bottom:none; }
+.tech-row .tr-k { color:#6688aa; }
+.conclusion-banner { padding:10px 18px; border-top:2px solid #1a1a38; background:linear-gradient(90deg,rgba(0,0,0,.6),rgba(10,10,30,.8)); text-align:center; font-size:12.5px; font-weight:700; letter-spacing:.05em; line-height:1.7; }
+.pattern-badge { border-radius:6px; padding:5px 9px; margin-bottom:5px; }
+.pattern-badge .p-name { font-size:11.5px; font-weight:700; margin-bottom:2px; }
+.pattern-badge .p-desc { font-size:10px; color:#8899bb; line-height:1.4; }
 </style>
 </head>
 <body>
@@ -107,62 +124,74 @@ td { padding:9px 8px; }
 <div id="stockModal" onclick="if(event.target===this)closeModal()">
   <div class="modal-box" onclick="event.stopPropagation()">
 
-    <!-- Modal header -->
-    <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:rgba(0,0,0,.4);">
-      <div style="display:flex;align-items:center;gap:10px;">
-        <span id="mName" style="font-size:20px;font-weight:800;"></span>
-        <span id="mCode" style="font-size:13px;color:var(--text-secondary);"></span>
-        <span id="mCat" style="font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(68,136,255,.15);color:#4488ff;border:1px solid rgba(68,136,255,.3);"></span>
+    <!-- ── Header bar ── -->
+    <div style="padding:10px 16px;border-bottom:1px solid #1a1a38;background:#080818;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+      <div style="display:flex;align-items:center;gap:8px;min-width:160px;">
+        <span id="mName" style="font-size:18px;font-weight:900;color:#e8e8ff;"></span>
+        <span id="mCode" style="font-size:12px;color:#6688aa;"></span>
+        <span id="mCat" style="font-size:9px;padding:1px 7px;border-radius:3px;background:rgba(68,136,255,.15);color:#4488ff;border:1px solid rgba(68,136,255,.3);"></span>
       </div>
-      <div style="display:flex;align-items:center;gap:12px;">
-        <div id="mPriceArea"></div>
-        <button onclick="closeModal()" style="padding:5px 13px;border-radius:7px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);color:var(--text-secondary);cursor:pointer;font-size:13px;">✕</button>
-      </div>
+      <div id="mPriceArea" style="display:flex;align-items:center;gap:16px;flex:1;flex-wrap:wrap;"></div>
+      <button onclick="closeModal()" style="padding:5px 13px;border-radius:7px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);color:#8888aa;cursor:pointer;font-size:13px;flex-shrink:0;">✕</button>
     </div>
 
-    <!-- Loading -->
-    <div id="mLoading" style="padding:60px;text-align:center;color:var(--text-secondary);font-size:14px;">
+    <!-- ── Loading ── -->
+    <div id="mLoading" style="padding:60px;text-align:center;color:#6688aa;font-size:14px;">
       <div style="width:20px;height:20px;border:2px solid rgba(0,255,136,.3);border-top-color:#00ff88;border-radius:50%;display:inline-block;" class="spin"></div>
       <div style="margin-top:12px;">載入K線資料中...</div>
     </div>
 
-    <!-- Error -->
-    <div id="mError" style="display:none;padding:40px;text-align:center;color:var(--accent-gold);font-size:13px;"></div>
+    <!-- ── Error ── -->
+    <div id="mError" style="display:none;padding:40px;text-align:center;color:#f7c948;font-size:13px;"></div>
 
-    <!-- Content -->
+    <!-- ── Content ── -->
     <div id="mContent" style="display:none;">
-      <div style="display:grid;grid-template-columns:1fr 300px;min-height:520px;">
 
-        <!-- Left: chart canvas -->
-        <div style="padding:12px;border-right:1px solid var(--border);">
+      <!-- Main 2-col grid: chart left | analysis right -->
+      <div style="display:grid;grid-template-columns:3fr 2fr;">
+
+        <!-- Left: K-line chart -->
+        <div style="border-right:1px solid #1a1a38;padding:8px 10px;">
+          <div style="font-size:10px;color:#5566aa;margin-bottom:4px;letter-spacing:.05em;">K線主圖（日線）－含布林通道 / MA5 / MA20 / MA60</div>
           <canvas id="mainChart" style="width:100%;display:block;"></canvas>
         </div>
 
-        <!-- Right: analysis -->
-        <div style="padding:12px;overflow-y:auto;max-height:620px;">
+        <!-- Right: analysis panels -->
+        <div style="padding:8px 10px;display:flex;flex-direction:column;gap:7px;overflow-y:auto;max-height:620px;">
 
-          <div id="mWinRate" class="analysis-card" style="text-align:center;border-color:rgba(0,255,136,.2);background:rgba(0,255,136,.04);"></div>
+          <!-- Row 1: signal light + win rate gauge -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;">
 
-          <div id="mTechSummary" class="analysis-card">
-            <h4>📊 技術分析</h4>
+            <!-- 主力燈號 -->
+            <div id="mSignalPanel" class="analysis-card" style="text-align:center;padding:10px 8px;"></div>
+
+            <!-- 短線勝率 gauge -->
+            <div id="mWinRate" class="analysis-card" style="text-align:center;padding:10px 8px;"></div>
+
           </div>
 
-          <div id="mPatterns" class="analysis-card">
-            <h4>🕯️ K線形態</h4>
-          </div>
+          <!-- 技術分析 -->
+          <div id="mTechSummary" class="analysis-card"></div>
 
-          <div id="mOperation" class="analysis-card">
-            <h4>🎯 操作建議</h4>
-          </div>
+          <!-- 操作建議 -->
+          <div id="mOperation" class="analysis-card"></div>
 
-          <div id="mChip" class="analysis-card">
-            <h4>📦 成交量分析</h4>
-          </div>
+          <!-- 成交量分析 -->
+          <div id="mChip" class="analysis-card"></div>
 
         </div>
       </div>
-    </div>
 
+      <!-- Bottom 2-col: 型態分析 | 技術分析總覽 -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;border-top:1px solid #1a1a38;">
+        <div id="mPatterns" style="padding:10px 14px;border-right:1px solid #1a1a38;"></div>
+        <div id="mTechOverview" style="padding:10px 14px;"></div>
+      </div>
+
+      <!-- 整體結論 banner -->
+      <div id="mConclusion" class="conclusion-banner"></div>
+
+    </div>
   </div>
 </div>
 
@@ -1225,6 +1254,49 @@ function drawMainChart(canvas, timestamps, open, high, low, close, volume, ma5, 
   }
 }
 
+// ── Gauge drawing ─────────────────────────────────────────────────
+function drawGauge(canvas, pct, color) {
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.clientWidth || 120;
+  const H = 68;
+  canvas.width  = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  canvas.style.height = H + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const cx = W / 2, cy = H * 0.88;
+  const r  = Math.min(W * 0.42, cy - 4);
+  // Background
+  ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 0);
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 10; ctx.lineCap = 'butt'; ctx.stroke();
+  // Zones
+  [{f:0,t:40,c:'rgba(255,68,102,.35)'},{f:40,t:65,c:'rgba(247,201,72,.35)'},{f:65,t:100,c:'rgba(0,255,136,.35)'}]
+    .forEach(z => {
+      ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI+(z.f/100)*Math.PI, Math.PI+(z.t/100)*Math.PI);
+      ctx.strokeStyle = z.c; ctx.lineWidth = 10; ctx.stroke();
+    });
+  // Active arc
+  ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, Math.PI+(pct/100)*Math.PI);
+  ctx.strokeStyle = color; ctx.lineWidth = 10; ctx.lineCap = 'round'; ctx.stroke();
+  // Tick marks
+  ctx.lineCap = 'butt';
+  [0,25,50,75,100].forEach(p => {
+    const a = Math.PI + (p/100)*Math.PI;
+    const x1 = cx+(r-14)*Math.cos(a), y1 = cy+(r-14)*Math.sin(a);
+    const x2 = cx+(r-7)*Math.cos(a),  y2 = cy+(r-7)*Math.sin(a);
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2);
+    ctx.strokeStyle='rgba(255,255,255,.25)'; ctx.lineWidth=1.5; ctx.stroke();
+  });
+  // Needle
+  const angle = Math.PI + (pct/100)*Math.PI;
+  ctx.save(); ctx.translate(cx,cy); ctx.rotate(angle);
+  ctx.beginPath(); ctx.moveTo(4,0); ctx.lineTo(-(r-18),0);
+  ctx.strokeStyle='rgba(255,255,255,.9)'; ctx.lineWidth=1.8; ctx.lineCap='round'; ctx.stroke();
+  ctx.restore();
+  // Center
+  ctx.beginPath(); ctx.arc(cx,cy,5,0,Math.PI*2); ctx.fillStyle='#e8e8ff'; ctx.fill();
+}
+
 // ── Modal ────────────────────────────────────────────────────────
 function closeModal() {
   document.getElementById('stockModal').style.display = 'none';
@@ -1237,163 +1309,258 @@ async function openModal(s) {
   const modal = document.getElementById('stockModal');
   modal.style.display = 'block';
 
-  // Header
+  // ── Header ─────────────────────────────────────────────────────
   document.getElementById('mName').textContent = s.name;
-  document.getElementById('mCode').textContent = `${s.code} · ${s.market}`;
+  document.getElementById('mCode').textContent = `(${s.code})`;
   document.getElementById('mCat').textContent  = CAT_LABEL[s.cat] || s.cat;
-  const pctColor = colorPct(s.changePct);
-  document.getElementById('mPriceArea').innerHTML = `
-    <div style="font-size:22px;font-weight:800;">${fmtPrice(s.close)}</div>
-    <div style="font-size:13px;color:${pctColor};font-weight:600;">${fmtPct(s.changePct)} ${s.change!=null?(s.change>=0?'+':'')+fmtPrice(s.change):''}</div>`;
 
-  // Show loading
+  const pc = colorPct(s.changePct);
+  const volTxt = s.volume >= 1e4 ? (s.volume/1e4).toFixed(1)+'萬張' : s.volume+'張';
+  const chgSign = s.change != null ? (s.change >= 0 ? '▲' : '▼') : '';
+  const chgAbs  = s.change != null ? fmtPrice(Math.abs(s.change)) : '';
+  document.getElementById('mPriceArea').innerHTML = `
+    <div class="dash-hdr-val">
+      <div class="v-main" style="color:${pc};">${fmtPrice(s.close)}</div>
+      <div class="v-sub"  style="color:${pc};">${chgSign}${chgAbs} (${fmtPct(s.changePct)})</div>
+    </div>
+    <div class="dash-hdr-sep"></div>
+    <div class="dash-info-block">
+      <div>成交量 <span>${volTxt}</span></div>
+      <div>振幅 <span>${s.amplitude.toFixed(2)}%</span></div>
+    </div>
+    <div class="dash-hdr-sep"></div>
+    <div class="dash-info-block">
+      <div>漲停 <span style="color:#ff4466;">${fmtPrice(s.limitUp)}</span></div>
+      <div>市場 <span>${s.market}</span></div>
+    </div>
+    ${s.rs!=null?`<div class="dash-hdr-sep"></div>
+    <div class="dash-info-block">
+      <div>相對強弱 <span style="color:${s.rs>=0?'#00ff88':'#ff4466'};">${s.rs>0?'+':''}${s.rs.toFixed(2)}%</span></div>
+      <div>妖股評分 <span style="color:#f7c948;">${s.score.toFixed(1)}</span></div>
+    </div>`:''}`;
+
   document.getElementById('mLoading').style.display = 'block';
   document.getElementById('mContent').style.display = 'none';
   document.getElementById('mError').style.display   = 'none';
 
   try {
-    const raw   = await fetchYahoo(s.code, s.market);
-    const res   = raw?.chart?.result?.[0];
+    const raw  = await fetchYahoo(s.code, s.market);
+    const res  = raw?.chart?.result?.[0];
     if (!res) throw new Error('無K線資料');
 
-    const ts    = res.timestamp || [];
-    const q     = res.indicators?.quote?.[0] || {};
-    const opens  = q.open  || [];
-    const highs  = q.high  || [];
-    const lows   = q.low   || [];
-    const closes = q.close || [];
-    const vols   = q.volume|| [];
+    const ts     = res.timestamp || [];
+    const q      = res.indicators?.quote?.[0] || {};
+    const opens  = q.open   || [];
+    const highs  = q.high   || [];
+    const lows   = q.low    || [];
+    const closes = q.close  || [];
+    const vols   = q.volume || [];
 
-    // Filter nulls
-    const valid = ts.map((_,i) => closes[i] != null && highs[i] != null && lows[i] != null);
-    const T  = ts.filter((_,i)    => valid[i]);
-    const O  = opens.filter((_,i) => valid[i]);
-    const H  = highs.filter((_,i) => valid[i]);
-    const L  = lows.filter((_,i)  => valid[i]);
-    const C  = closes.filter((_,i)=> valid[i]);
-    const V  = vols.filter((_,i)  => valid[i]).map(v => v || 0);
-
+    const valid = ts.map((_,i) => closes[i]!=null && highs[i]!=null && lows[i]!=null);
+    const T  = ts.filter((_,i)     => valid[i]);
+    const O  = opens.filter((_,i)  => valid[i]);
+    const H  = highs.filter((_,i)  => valid[i]);
+    const L  = lows.filter((_,i)   => valid[i]);
+    const C  = closes.filter((_,i) => valid[i]);
+    const V  = vols.filter((_,i)   => valid[i]).map(v => v||0);
     if (!C.length) throw new Error('歷史資料為空');
 
-    const ma5  = calcMA(C, 5);
-    const ma20 = calcMA(C, 20);
-    const ma60 = calcMA(C, 60);
+    const ma5  = calcMA(C,5);
+    const ma20 = calcMA(C,20);
+    const ma60 = calcMA(C,60);
     const { upper: bollUpper, lower: bollLower } = calcBollinger(C);
-    const rsi  = calcRSI(C);
-    const { K, D } = calcKD(H, L, C);
+    const rsiArr = calcRSI(C);
+    const { K, D } = calcKD(H,L,C);
     const { dif, dea, bar } = calcMACD(C);
-    const patterns = detectPatterns(O, H, L, C);
-    const { score: wr, bulls, bears } = calcWinRate(C, ma5, ma20, ma60, K, D, dif, dea, bar, patterns);
+    const patterns = detectPatterns(O,H,L,C);
+    const { score: wr, bulls: wrBulls, bears: wrBears } = calcWinRate(C,ma5,ma20,ma60,K,D,dif,dea,bar,patterns);
+
+    const last   = C.length - 1;
+    const c      = C[last];
+    const kLast  = K[last],  dLast  = D[last];
+    const difL   = dif[last], deaL  = dea[last];
+    const rsiLast = rsiArr.filter(v=>v!=null).slice(-1)[0] ?? null;
+    const trend   = [ma5[last],ma20[last],ma60[last]].filter(m=>m&&c>m).length;
 
     // 突破偵測
-    const last = C.length - 1;
     const breakouts = [];
-    if (C.length > 20 && C[last] > Math.max(...C.slice(-21, -1))) breakouts.push('突破20日新高');
-    if (C.length > 60 && C[last] > Math.max(...C.slice(-61, -1))) breakouts.push('突破60日新高');
+    if (C.length>20 && c>Math.max(...C.slice(-21,-1))) breakouts.push('突破20日新高');
+    if (C.length>60 && c>Math.max(...C.slice(-61,-1))) breakouts.push('突破60日新高');
 
     // Show content
-    document.getElementById('mLoading').style.display  = 'none';
-    document.getElementById('mContent').style.display  = 'block';
+    document.getElementById('mLoading').style.display = 'none';
+    document.getElementById('mContent').style.display = 'block';
 
-    // Draw chart after layout paint
+    // Draw K-line chart
     requestAnimationFrame(() => {
-      const canvas = document.getElementById('mainChart');
-      drawMainChart(canvas, T, O, H, L, C, V, ma5, ma20, ma60, bollUpper, bollLower, K, D, dif, dea, bar, rsi);
+      drawMainChart(document.getElementById('mainChart'), T,O,H,L,C,V, ma5,ma20,ma60,bollUpper,bollLower,K,D,dif,dea,bar,rsiArr);
     });
 
-    // Win rate
-    const wrColor = wr >= 65 ? '#00ff88' : wr >= 50 ? '#f7c948' : '#ff4466';
-    document.getElementById('mWinRate').innerHTML = `
-      <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">技術面勝率估算</div>
-      <div style="font-size:38px;font-weight:800;color:${wrColor};">${wr}%</div>
-      <div style="font-size:10px;color:var(--text-secondary);margin-top:2px;">多因子技術指標加總 · 不構成投資建議</div>
-      ${breakouts.length ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;justify-content:center;">${breakouts.map(b=>`<span style="font-size:10px;background:rgba(255,34,68,.18);color:#ff4466;border:1px solid rgba(255,34,68,.45);border-radius:4px;padding:2px 7px;font-weight:700;">🚀 ${b}</span>`).join('')}</div>` : ''}
-      ${bulls.length ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;justify-content:center;">${bulls.slice(0,4).map(b=>`<span style="font-size:10px;background:rgba(0,255,136,.1);color:#00ff88;border:1px solid rgba(0,255,136,.25);border-radius:4px;padding:1px 6px;">${b}</span>`).join('')}</div>` : ''}
-      ${bears.length ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;justify-content:center;">${bears.slice(0,3).map(b=>`<span style="font-size:10px;background:rgba(255,68,102,.1);color:#ff4466;border:1px solid rgba(255,68,102,.25);border-radius:4px;padding:1px 6px;">${b}</span>`).join('')}</div>` : ''}`;
+    // ── 主力燈號 ──────────────────────────────────────────────────
+    const vol5Avg  = V.slice(-5).reduce((a,b)=>a+b,0)/5||1;
+    const vol20Avg = V.slice(-20).reduce((a,b)=>a+b,0)/20||1;
+    const bullSigs = [], bearSigs = [];
+    if (trend>=2) bullSigs.push('均線多頭');         else if (trend===0) bearSigs.push('均線空頭');
+    if (kLast&&dLast&&kLast>dLast&&kLast<80) bullSigs.push('KD金叉');
+    else if (kLast&&dLast&&kLast<dLast)       bearSigs.push('KD死叉');
+    if (difL&&deaL&&difL>0&&difL>deaL) bullSigs.push('MACD多方');
+    else if (difL&&deaL&&difL<deaL)    bearSigs.push('MACD空方');
+    if (rsiLast&&rsiLast>=40&&rsiLast<=70) bullSigs.push('RSI健康');
+    else if (rsiLast&&rsiLast>80)          bearSigs.push('RSI超買');
+    else if (rsiLast&&rsiLast<30)          bullSigs.push('RSI超賣');
+    if (V[last]>vol5Avg*1.3&&s.changePct>0) bullSigs.push('放量上漲');
 
-    // Technical summary
-    const c     = C[last];
-    const kLast = K[last], dLast = D[last];
-    const difL  = dif[last], deaL = dea[last];
-    const trend = [ma5[last],ma20[last],ma60[last]].filter(m=>m&&c>m).length;
-    const trendStr = trend>=2 ? '多方趨勢 ▲' : trend===1 ? '震盪偏多 →' : '空方趨勢 ▼';
-    const trendColor= trend>=2 ? '#00ff88' : trend===1 ? '#f7c948' : '#ff4466';
-    const recentVol5 = V.slice(-5);
-    const avgVol5 = recentVol5.reduce((a,b)=>a+b,0)/recentVol5.length||1;
-    const rsiLast = rsi.filter(v => v != null).slice(-1)[0] ?? null;
-    const rsiColor = rsiLast > 70 ? '#ff4466' : rsiLast < 30 ? '#00ff88' : 'var(--text-primary)';
-    const rsiStr  = rsiLast != null ? `${rsiLast.toFixed(1)}${rsiLast>70?' (超買)':rsiLast<30?' (超賣)':''}` : '--';
-    const bias5   = ma5[last]  != null ? (c - ma5[last])  / ma5[last]  * 100 : null;
-    const bias20  = ma20[last] != null ? (c - ma20[last]) / ma20[last] * 100 : null;
-    const bias60  = ma60[last] != null ? (c - ma60[last]) / ma60[last] * 100 : null;
-    const bFmt = v => v != null ? `${v>0?'+':''}${v.toFixed(2)}%` : '--';
-    const bColor = (v, warn) => v == null ? 'var(--text-secondary)' : Math.abs(v) > warn ? '#f7c948' : 'var(--text-primary)';
+    const sig = bullSigs.length - bearSigs.length;
+    const [sColor,sLabel,sDesc] = sig>=3 ? ['#00ff88','安全','主力偏多，籌碼穩定'] :
+                                   sig>=1 ? ['#f7c948','觀察','多空混合，謹慎操作'] :
+                                            ['#ff4466','危險','空方為主，建議觀望'];
+    document.getElementById('mSignalPanel').innerHTML = `
+      <div class="panel-title">主力燈號</div>
+      <div class="signal-light" style="background:${sColor};border-color:${sColor};box-shadow:0 0 18px ${sColor}70;"></div>
+      <div style="font-size:18px;font-weight:900;color:${sColor};margin-bottom:4px;">${sLabel}</div>
+      <div style="font-size:10px;color:#8899bb;line-height:1.5;">${sDesc}</div>
+      ${bullSigs.length?`<div style="margin-top:6px;font-size:9px;color:${sColor}90;line-height:1.8;">${bullSigs.join(' · ')}</div>`:''}
+      ${bearSigs.length?`<div style="font-size:9px;color:#ff446690;line-height:1.8;">${bearSigs.join(' · ')}</div>`:''}`;
+
+    // ── 短線勝率 gauge ─────────────────────────────────────────────
+    const wrColor = wr>=65?'#00ff88':wr>=50?'#f7c948':'#ff4466';
+    const wrLabel = wr>=65?'勝率偏多':wr>=50?'勝率中性':'勝率偏弱';
+    document.getElementById('mWinRate').innerHTML = `
+      <div class="panel-title">短線勝率</div>
+      <canvas id="gaugeCanvas" style="width:100%;max-width:150px;display:block;margin:0 auto;"></canvas>
+      <div style="font-size:26px;font-weight:900;color:${wrColor};margin:-4px 0 2px;line-height:1;">${wr}%</div>
+      <div style="font-size:10px;color:#8899bb;">${wrLabel}</div>
+      ${breakouts.length?`<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:3px;justify-content:center;">${breakouts.map(b=>`<span style="font-size:9px;background:rgba(255,68,102,.15);color:#ff6677;border:1px solid rgba(255,68,102,.3);border-radius:3px;padding:1px 5px;font-weight:700;">${b}</span>`).join('')}</div>`:''}
+      ${wrBulls.length?`<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:3px;justify-content:center;">${wrBulls.slice(0,3).map(b=>`<span style="font-size:9px;background:rgba(0,255,136,.08);color:#00ff88;border:1px solid rgba(0,255,136,.2);border-radius:3px;padding:1px 5px;">${b}</span>`).join('')}</div>`:''}`;
+    requestAnimationFrame(() => {
+      const gc = document.getElementById('gaugeCanvas');
+      if (gc) drawGauge(gc, wr, wrColor);
+    });
+
+    // ── 技術分析 ───────────────────────────────────────────────────
+    const trendColor = trend>=2?'#00ff88':trend===1?'#f7c948':'#ff4466';
+    const trendStr   = trend>=2?'多方趨勢 ▲':trend===1?'震盪偏多 →':'空方趨勢 ▼';
+    const rsiColor   = rsiLast>70?'#ff4466':rsiLast<30?'#00ff88':'#e8e8ff';
+    const rsiStr     = rsiLast!=null?`${rsiLast.toFixed(1)}${rsiLast>70?' 超買':rsiLast<30?' 超賣':''}`:'--';
+    const bias5  = ma5[last]  ? (c-ma5[last]) /ma5[last]  *100 : null;
+    const bias20 = ma20[last] ? (c-ma20[last])/ma20[last] *100 : null;
+    const bias60 = ma60[last] ? (c-ma60[last])/ma60[last] *100 : null;
+    const bFmt   = v => v!=null ? `${v>0?'+':''}${v.toFixed(2)}%` : '--';
+    const bClr   = (v,w) => v==null?'#6688aa':Math.abs(v)>w?'#f7c948':'#e8e8ff';
+    const volStr2 = V[last]>vol5Avg*1.5?'🔥 放量':V[last]<vol5Avg*0.7?'縮量':'量平';
 
     document.getElementById('mTechSummary').innerHTML = `
-      <h4 style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--text-secondary);letter-spacing:.06em;">📊 技術分析</h4>
+      <h4>📊 技術分析</h4>
       <div class="stat-row"><span class="stat-label">趨勢</span><span style="color:${trendColor};font-weight:700;">${trendStr}</span></div>
-      <div class="stat-row"><span class="stat-label">均線結構</span><span>${[ma5[last]&&c>ma5[last]?'上MA5':'',ma20[last]&&c>ma20[last]?'上MA20':'',ma60[last]&&c>ma60[last]?'上MA60':''].filter(Boolean).join(' · ')||'均線以下'}</span></div>
+      <div class="stat-row"><span class="stat-label">均線結構</span><span style="color:#c8c8ee;">${[ma5[last]&&c>ma5[last]?'上MA5':'',ma20[last]&&c>ma20[last]?'上MA20':'',ma60[last]&&c>ma60[last]?'上MA60':''].filter(Boolean).join('·')||'均線以下'}</span></div>
       <div class="stat-row"><span class="stat-label">RSI(14)</span><span style="color:${rsiColor};font-weight:600;">${rsiStr}</span></div>
-      <div class="stat-row"><span class="stat-label">KD(9,3,3)</span><span style="color:${kLast&&dLast&&kLast>dLast?'#00ff88':'#ff4466'};">${kLast?`K:${kLast.toFixed(1)} D:${dLast.toFixed(1)} ${kLast>dLast?'金叉▲':'死叉▼'}`:'--'}</span></div>
-      <div class="stat-row"><span class="stat-label">MACD</span><span style="color:${difL&&deaL&&difL>deaL?'#00ff88':'#ff4466'};">${difL?`DIF:${difL.toFixed(3)} ${difL>deaL?'金叉':'死叉'}`:'--'}</span></div>
-      <div class="stat-row"><span class="stat-label">乖離率MA5</span><span style="color:${bColor(bias5,8)}">${bFmt(bias5)}</span></div>
-      <div class="stat-row"><span class="stat-label">乖離率MA20</span><span style="color:${bColor(bias20,12)}">${bFmt(bias20)}</span></div>
-      <div class="stat-row"><span class="stat-label">乖離率MA60</span><span style="color:${bColor(bias60,15)}">${bFmt(bias60)}</span></div>
-      <div class="stat-row"><span class="stat-label">成交量</span><span>${V[last]>avgVol5*1.5?'🔥放量':V[last]<avgVol5*0.7?'縮量':'量平'}</span></div>
-      <div class="stat-row"><span class="stat-label">前日收</span><span>${fmtPrice(s.prevClose)}</span></div>
-      <div class="stat-row"><span class="stat-label">今日振幅</span><span>${s.amplitude.toFixed(2)}%</span></div>
-      <div class="stat-row"><span class="stat-label">漲停價</span><span style="color:#ff4466;">${fmtPrice(s.limitUp)}</span></div>
-      <div class="stat-row"><span class="stat-label">距漲停</span><span>${c<s.limitUp?'+'+((s.limitUp-c)/c*100).toFixed(1)+'%':'已漲停'}</span></div>`;
+      <div class="stat-row"><span class="stat-label">KD(9,3,3)</span><span style="color:${kLast&&dLast&&kLast>dLast?'#00ff88':'#ff4466'};">${kLast?`K ${kLast.toFixed(1)} · D ${dLast.toFixed(1)} ${kLast>dLast?'▲金叉':'▼死叉'}`:'--'}</span></div>
+      <div class="stat-row"><span class="stat-label">MACD</span><span style="color:${difL&&deaL&&difL>deaL?'#00ff88':'#ff4466'};">${difL!=null?`DIF ${difL.toFixed(3)} ${difL>deaL?'▲':'▼'}`:'--'}</span></div>
+      <div class="stat-row"><span class="stat-label">乖離MA5</span><span style="color:${bClr(bias5,8)}">${bFmt(bias5)}</span></div>
+      <div class="stat-row"><span class="stat-label">乖離MA20</span><span style="color:${bClr(bias20,12)}">${bFmt(bias20)}</span></div>
+      <div class="stat-row"><span class="stat-label">乖離MA60</span><span style="color:${bClr(bias60,15)}">${bFmt(bias60)}</span></div>
+      <div class="stat-row"><span class="stat-label">成交量</span><span>${volStr2}</span></div>
+      <div class="stat-row"><span class="stat-label">振幅</span><span>${s.amplitude.toFixed(2)}%</span></div>
+      <div class="stat-row"><span class="stat-label">距漲停</span><span style="color:${c>=s.limitUp?'#ff4466':'#c8c8ee'};">${c<s.limitUp?'+'+((s.limitUp-c)/c*100).toFixed(2)+'%':'⚡ 已漲停'}</span></div>`;
 
-    // Patterns
-    const patternHTML = patterns.length
-      ? patterns.map(p => {
-          const c2 = p.type==='bullish'?'#00ff88':p.type==='bearish'?'#ff4466':'#f7c948';
-          const bg = p.type==='bullish'?'rgba(0,255,136,.08)':p.type==='bearish'?'rgba(255,68,102,.08)':'rgba(247,201,72,.08)';
-          return `<div style="background:${bg};border:1px solid ${c2}33;border-radius:6px;padding:6px 10px;margin-bottom:6px;">
-            <div style="color:${c2};font-weight:700;font-size:12px;">${p.type==='bullish'?'▲':'▼'} ${p.name}</div>
-            <div style="color:var(--text-secondary);font-size:11px;margin-top:2px;">${p.desc}</div>
-          </div>`;
-        }).join('')
-      : `<div style="color:var(--text-secondary);font-size:12px;text-align:center;padding:8px;">近期無明顯形態信號</div>`;
-    document.getElementById('mPatterns').innerHTML = `<h4 style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--text-secondary);letter-spacing:.06em;">🕯️ K線形態</h4>${patternHTML}`;
-
-    // Operation suggestion
+    // ── 操作建議 ───────────────────────────────────────────────────
     const recent10L = Math.min(...L.slice(-10));
     const recent10H = Math.max(...H.slice(-10));
     const support   = ma20[last] ? Math.min(recent10L, ma20[last]) : recent10L;
+    const pressure  = ma20[last] ? Math.max(recent10H, bollUpper[last]||recent10H) : recent10H;
     const stopLoss  = support * 0.97;
     const risk      = c - stopLoss;
     const t1        = c + risk * 1.5;
     const t2        = c + risk * 3;
     const isLong    = trend >= 1;
+    const opBg      = isLong ? 'rgba(0,255,136,.08)' : 'rgba(255,68,102,.08)';
+    const opBdr     = isLong ? 'rgba(0,255,136,.2)'  : 'rgba(255,68,102,.2)';
+    const opClr     = isLong ? '#00ff88' : '#ff4466';
+    const opTxt     = isLong ? '偏多操作' : '偏空觀望';
+    const opStrat   = trend>=2
+      ? (V[last]>vol5Avg*1.5 ? '放量突破，強勢追價或回調布局' : '回撐支撐區建倉，壓力區分批減碼')
+      : trend===1
+      ? '區間震盪操作，低買高賣，嚴守停損'
+      : '建議觀望，等待轉強訊號再進場';
     document.getElementById('mOperation').innerHTML = `
-      <h4 style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--text-secondary);letter-spacing:.06em;">🎯 操作建議</h4>
-      <div style="background:${isLong?'rgba(0,255,136,.08)':'rgba(255,68,102,.08)'};border:1px solid ${isLong?'rgba(0,255,136,.2)':'rgba(255,68,102,.2)'};border-radius:8px;padding:8px;margin-bottom:8px;text-align:center;">
-        <span style="color:${isLong?'#00ff88':'#ff4466'};font-weight:800;font-size:14px;">${isLong?'偏多操作':'偏空觀望'}</span>
+      <h4>🎯 操作建議</h4>
+      <div style="text-align:center;margin-bottom:8px;">
+        <span class="op-badge" style="background:${opBg};border:1px solid ${opBdr};color:${opClr};">${opTxt}</span>
       </div>
-      <div class="stat-row"><span class="stat-label">進場區間</span><span style="color:#f7c948;">${fmtPrice(c*0.98)} ~ ${fmtPrice(c*1.01)}</span></div>
-      <div class="stat-row"><span class="stat-label">停損</span><span style="color:#ff4466;">${fmtPrice(stopLoss)}</span></div>
+      <div class="stat-row"><span class="stat-label">短線操作</span><span style="color:#c8c8ee;">${opStrat.split('，')[0]}</span></div>
+      <div class="stat-row"><span class="stat-label">支撐區間</span><span style="color:#00ff88;">${fmtPrice(support)} ~ ${fmtPrice(support*1.015)}</span></div>
+      <div class="stat-row"><span class="stat-label">壓力區間</span><span style="color:#ff4466;">${fmtPrice(pressure*0.99)} ~ ${fmtPrice(pressure)}</span></div>
+      <div class="stat-row"><span class="stat-label">停損建議</span><span style="color:#ff4466;">跌破 ${fmtPrice(stopLoss)} 停損</span></div>
       <div class="stat-row"><span class="stat-label">目標一</span><span style="color:#00ff88;">${fmtPrice(t1)}</span></div>
       <div class="stat-row"><span class="stat-label">目標二</span><span style="color:#00ff88;">${fmtPrice(t2)}</span></div>
-      <div style="font-size:10px;color:#4a4a6a;margin-top:8px;line-height:1.5;">以MA均線/近期低點估算，僅供參考。務必依個人風控紀律操作。</div>`;
+      <div style="font-size:9px;color:#3a4a6a;margin-top:6px;line-height:1.5;">均線/近10日區間估算。僅供參考，請依個人風控紀律操作。</div>`;
 
-    // Chip / volume analysis
-    const vol5Avg = V.slice(-5).reduce((a,b)=>a+b,0)/5||1;
-    const vol20Avg= V.slice(-20).reduce((a,b)=>a+b,0)/20||1;
-    const todayVR = V[last]/vol20Avg;
-    const rangePct= (c-recent10L)/(recent10H-recent10L||1)*100;
+    // ── 成交量分析 ─────────────────────────────────────────────────
+    const todayVR  = V[last]/vol20Avg;
+    const rangePct = (c-recent10L)/(recent10H-recent10L||1)*100;
+    const posLabel = rangePct>75?'📍 高點附近':rangePct>55?'偏高區':rangePct>35?'中性':rangePct>15?'偏低區':'📍 低點附近';
     document.getElementById('mChip').innerHTML = `
-      <h4 style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--text-secondary);letter-spacing:.06em;">📦 成交量分析</h4>
-      <div class="stat-row"><span class="stat-label">今量/20日均量</span><span style="color:${todayVR>=2?'#f7c948':todayVR>=1.2?'#00ff88':'var(--text-secondary)'};">${todayVR.toFixed(2)}x ${todayVR>=2?'🔥爆量':todayVR>=1.2?'放量':todayVR<0.7?'縮量':'量平'}</span></div>
-      <div class="stat-row"><span class="stat-label">近5日均量</span><span>${(vol5Avg/1e6).toFixed(1)} 萬張</span></div>
-      <div class="stat-row"><span class="stat-label">10日價格位置</span>
-        <span style="color:${rangePct>70?'#ff4466':rangePct>30?'#f7c948':'#00ff88'};">
-          ${rangePct>70?'高點附近':rangePct>50?'偏高':'rangePct>30'?'中性':'低點附近'} (${rangePct.toFixed(0)}%)
-        </span>
-      </div>
+      <h4>📦 成交量分析</h4>
+      <div class="stat-row"><span class="stat-label">今量/20均量</span><span style="color:${todayVR>=2?'#f7c948':todayVR>=1.2?'#00ff88':'#c8c8ee'};">${todayVR.toFixed(2)}x ${todayVR>=2?'🔥 爆量':todayVR>=1.2?'放量':todayVR<0.7?'縮量':'量平'}</span></div>
+      <div class="stat-row"><span class="stat-label">近5日均量</span><span>${(vol5Avg/1000).toFixed(0)} 張/日</span></div>
+      <div class="stat-row"><span class="stat-label">近20日均量</span><span>${(vol20Avg/1000).toFixed(0)} 張/日</span></div>
+      <div class="stat-row"><span class="stat-label">10日價格位置</span><span style="color:${rangePct>70?'#ff4466':rangePct>30?'#f7c948':'#00ff88'};">${posLabel} (${rangePct.toFixed(0)}%)</span></div>
       <div class="stat-row"><span class="stat-label">板塊</span><span style="color:#4488ff;">${CAT_DESC[s.cat]||'--'}</span></div>
-      <div class="stat-row"><span class="stat-label">成交筆數</span><span>${s.txns>0?s.txns.toLocaleString():'--'}</span></div>`;
+      ${s.txns>0?`<div class="stat-row"><span class="stat-label">成交筆數</span><span>${s.txns.toLocaleString()}</span></div>`:''}`;
+
+    // ── 型態分析（底部左側）─────────────────────────────────────
+    const patHTML = patterns.length
+      ? patterns.map(p => {
+          const pc2 = p.type==='bullish'?'#00ff88':p.type==='bearish'?'#ff4466':'#f7c948';
+          const bg2 = p.type==='bullish'?'rgba(0,255,136,.07)':p.type==='bearish'?'rgba(255,68,102,.07)':'rgba(247,201,72,.07)';
+          return `<div class="pattern-badge" style="background:${bg2};border:1px solid ${pc2}30;">
+            <div class="p-name" style="color:${pc2};">${p.type==='bullish'?'▲ ':'▼ '}${p.name}</div>
+            <div class="p-desc">${p.desc}</div>
+          </div>`;
+        }).join('')
+      : `<div style="color:#4a5a7a;font-size:11px;text-align:center;padding:10px 0;">近期無明顯K線形態信號</div>`;
+    document.getElementById('mPatterns').innerHTML =
+      `<div class="panel-title" style="margin-bottom:8px;">🕯️ 型態分析（嚴格判定）</div>${patHTML}`;
+
+    // ── 技術分析總覽（底部右側）──────────────────────────────────
+    const maStr = ma5[last]&&ma20[last]&&ma60[last] ?
+      (c>ma5[last]&&ma5[last]>ma20[last]&&ma20[last]>ma60[last] ? `多頭排列（5 > 20 > 60）` :
+       c<ma5[last]&&ma5[last]<ma20[last]&&ma20[last]<ma60[last] ? `空頭排列（5 < 20 < 60）` : '均線糾結') : '--';
+    const posStr = trend>=2 ? (c>recent10H*0.98?'高整整理區':'多頭中繼區')
+                 : trend>=1 ? '震盪整理區' : (c<recent10L*1.02?'低點測試區':'弱勢盤整區');
+    const vpStr  = (V[last]>vol20Avg*1.2&&s.changePct>0) ? '量價齊揚，強勢訊號' :
+                   (V[last]<vol20Avg*0.7&&Math.abs(s.changePct)<1) ? '量縮整理，蓄勢待發' :
+                   (V[last]>vol20Avg*1.2&&s.changePct<0) ? '量增下跌，留意風險' : '量價平穩';
+    const rsStr  = s.rs!=null
+      ? (s.rs>2?`強於大盤 +${s.rs.toFixed(2)}%`:s.rs>0?`略強大盤 +${s.rs.toFixed(2)}%`:s.rs>-2?`略弱大盤 ${s.rs.toFixed(2)}%`:`弱於大盤 ${s.rs.toFixed(2)}%`)
+      : '--';
+    const biasLevel = bias20!=null ? (Math.abs(bias20)>15?'乖離過大，留意回歸':Math.abs(bias20)>8?'乖離偏高，注意拉回':'乖離正常') : '--';
+    document.getElementById('mTechOverview').innerHTML = `
+      <div class="panel-title" style="margin-bottom:8px;">📈 技術分析總覽</div>
+      <div class="tech-row"><span class="tr-k">趨勢方向</span><span style="color:${trendColor};font-weight:700;">${trendStr}</span></div>
+      <div class="tech-row"><span class="tr-k">目前位置</span><span style="color:#c8c8ee;">${posStr}</span></div>
+      <div class="tech-row"><span class="tr-k">量價關係</span><span style="color:#c8c8ee;">${vpStr}</span></div>
+      <div class="tech-row"><span class="tr-k">均線結構</span><span style="color:#c8c8ee;">${maStr}</span></div>
+      <div class="tech-row"><span class="tr-k">相對強弱</span><span style="color:${s.rs!=null&&s.rs>0?'#00ff88':'#ff4466'};">${rsStr}</span></div>
+      <div class="tech-row"><span class="tr-k">乖離評估</span><span style="color:${Math.abs(bias20||0)>10?'#f7c948':'#c8c8ee'};">${biasLevel}</span></div>
+      <div class="tech-row"><span class="tr-k">KD狀態</span><span style="color:${kLast>dLast?'#00ff88':'#ff4466'};">${kLast?`K:${kLast.toFixed(1)} D:${dLast.toFixed(1)} ${kLast>dLast?'多方排列↑':'空方排列↓'}`:'--'}</span></div>
+      <div class="tech-row"><span class="tr-k">MACD動能</span><span style="color:${difL>deaL?'#00ff88':'#ff4466'};">${difL!=null?(difL>0?'零軸上方 '+(difL>deaL?'擴張':'收斂'):'零軸下方 '+(difL>deaL?'收斂':'擴張')):'--'}</span></div>`;
+
+    // ── 整體結論 banner ────────────────────────────────────────────
+    const concParts = [];
+    if (trend>=2) concParts.push('多頭趨勢');
+    else if (trend===1) concParts.push('震盪偏多');
+    else concParts.push('趨勢偏弱');
+    if (V[last]<vol20Avg*0.7) concParts.push('量縮整理');
+    else if (V[last]>vol20Avg*1.5) concParts.push('放量攻擊');
+    else concParts.push('量能平穩');
+    const concOp = isLong ? (V[last]<vol20Avg*0.7?'短線偏震盪操作，勿追高':'短線偏多，逢低布局')
+                          : '建議觀望，等待方向明確';
+    const concColor = trend>=2?'#00ff88':trend===1?'#f7c948':'#ff4466';
+    document.getElementById('mConclusion').innerHTML =
+      `<span style="color:#6688aa;margin-right:8px;font-size:11px;">整體結論</span>` +
+      `<span style="color:${concColor};">${concParts.join('，')}，${concOp}。</span>` +
+      `<span style="color:#3a4a6a;font-size:10px;margin-left:12px;">本圖僅供參考，非投資建議。投資有風險，請審慎評估</span>`;
 
   } catch(err) {
     document.getElementById('mLoading').style.display = 'none';
@@ -1401,8 +1568,8 @@ async function openModal(s) {
     document.getElementById('mError').innerHTML = `
       <div style="font-size:28px;margin-bottom:12px;">📡</div>
       <div style="color:#f7c948;font-weight:600;margin-bottom:8px;">K線資料載入失敗</div>
-      <div style="font-size:12px;color:var(--text-secondary);">${err.message}</div>
-      <div style="font-size:11px;color:#4a4a6a;margin-top:8px;">Yahoo Finance / corsproxy 可能暫時無法連線</div>`;
+      <div style="font-size:12px;color:#8888aa;">${err.message}</div>
+      <div style="font-size:11px;color:#4a4a6a;margin-top:8px;">Yahoo Finance / proxy 可能暫時無法連線</div>`;
   }
 }
 
