@@ -105,18 +105,18 @@ td { padding:9px 8px; }
 
 <!-- Sector Heatmap Modal -->
 <div id="sectorModal" onclick="if(event.target===this)closeSectorModal()">
-  <div style="max-width:980px;margin:0 auto;background:#0d0d1f;border:1px solid #1e1e3a;border-radius:16px;overflow:hidden;" onclick="event.stopPropagation()">
-    <div style="padding:14px 18px;border-bottom:1px solid #1e1e3a;display:flex;align-items:center;justify-content:space-between;background:rgba(0,0,0,.4);">
-      <div>
-        <span style="font-size:18px;font-weight:800;">🗺️ 板塊輪動地圖</span>
-        <span id="sectorSubtitle" style="font-size:11px;color:#8888aa;margin-left:12px;"></span>
+  <div style="max-width:1500px;margin:0 auto;background:#08081a;border:1px solid #1a1a38;border-radius:12px;overflow:hidden;" onclick="event.stopPropagation()">
+    <div style="padding:10px 16px;border-bottom:1px solid #1a1a38;display:flex;align-items:center;justify-content:space-between;background:#060614;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span style="font-size:16px;font-weight:800;color:#e8e8ff;">🗺️ 板塊輪動地圖</span>
+        <span id="sectorSubtitle" style="font-size:11px;color:#6688aa;"></span>
       </div>
-      <button onclick="closeSectorModal()" style="padding:5px 13px;border-radius:7px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);color:#8888aa;cursor:pointer;font-size:13px;">✕</button>
+      <button onclick="closeSectorModal()" style="padding:5px 13px;border-radius:7px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);color:#8888aa;cursor:pointer;font-size:13px;">✕</button>
     </div>
-    <div style="padding:16px 18px;">
-      <div id="sectorGrid" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;"></div>
-      <div id="sectorTable"></div>
+    <div style="padding:6px;">
+      <div id="treemapContainer" style="position:relative;width:100%;height:660px;border-radius:6px;overflow:hidden;background:#0a0a18;"></div>
     </div>
+    <div id="treemapLegend" style="padding:6px 14px 10px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:10px;color:#6688aa;"></div>
   </div>
 </div>
 
@@ -1705,14 +1705,71 @@ function startCountdown() {
 function refresh() { loadAll().then(startCountdown); }
 
 // ── Sector Heatmap ───────────────────────────────────────────────
-function heatStyle(pct) {
-  if (pct >=  5) return { bg:'rgba(220,20,50,.82)',  border:'rgba(255,60,90,.9)',  txt:'#fff' };
-  if (pct >=  3) return { bg:'rgba(200,40,65,.60)',  border:'rgba(255,80,110,.7)', txt:'#fff' };
-  if (pct >=  1) return { bg:'rgba(160,30,55,.35)',  border:'rgba(220,70,95,.4)',  txt:'#ffaaaa' };
-  if (pct >=  0) return { bg:'rgba(140,20,45,.15)',  border:'rgba(200,60,85,.2)',  txt:'#ff9999' };
-  if (pct >= -1) return { bg:'rgba(30,80,200,.18)',  border:'rgba(68,136,255,.25)',txt:'#99bbff' };
-  if (pct >= -3) return { bg:'rgba(30,70,190,.40)',  border:'rgba(68,136,255,.5)', txt:'#bbccff' };
-  return            { bg:'rgba(20,55,170,.65)',  border:'rgba(68,136,255,.75)',txt:'#cce0ff' };
+// ── Treemap heat color ────────────────────────────────────────────
+function stockHeatBg(pct) {
+  if (pct >=  9.5) return '#c01030';
+  if (pct >=  5)   return '#a81a35';
+  if (pct >=  3)   return '#8e2238';
+  if (pct >=  1.5) return '#74283a';
+  if (pct >=  0.5) return '#5a2a36';
+  if (pct >=  0)   return '#3a2630';
+  if (pct >= -0.5) return '#2a2a3a';
+  if (pct >= -1.5) return '#243050';
+  if (pct >= -3)   return '#1e3868';
+  if (pct >= -5)   return '#184280';
+  return '#124c98';
+}
+
+// ── Squarified treemap layout ────────────────────────────────────
+function treemapLayout(items, x, y, w, h) {
+  if (!items.length) return [];
+  const total = items.reduce((s,i)=>s+i.value,0);
+  if (total<=0) return [];
+  const sorted = items.map(it=>({...it})).sort((a,b)=>b.value-a.value);
+  const result = [];
+  let rx=x, ry=y, rw=w, rh=h, rVal=total, idx=0;
+
+  while (idx < sorted.length) {
+    if (sorted.length - idx === 1) {
+      result.push({...sorted[idx], x:rx, y:ry, w:rw, h:rh});
+      break;
+    }
+    const vert = rh > rw;
+    const shortSide = vert ? rw : rh;
+    const longSide  = vert ? rh : rw;
+
+    let row=[sorted[idx]], rowV=sorted[idx].value;
+    let best=tmWorst(row,rowV,shortSide,longSide,rVal);
+    for (let j=idx+1; j<sorted.length; j++) {
+      const tryRow=[...row,sorted[j]], tryV=rowV+sorted[j].value;
+      const tryW=tmWorst(tryRow,tryV,shortSide,longSide,rVal);
+      if (tryW<=best) { row=tryRow; rowV=tryV; best=tryW; } else break;
+    }
+
+    const thick = longSide * (rowV/rVal);
+    let off=0;
+    for (const it of row) {
+      const len = shortSide * (it.value/rowV);
+      if (vert) { result.push({...it, x:rx+off, y:ry, w:len, h:thick}); }
+      else      { result.push({...it, x:rx, y:ry+off, w:thick, h:len}); }
+      off += len;
+    }
+    if (vert) { ry+=thick; rh-=thick; } else { rx+=thick; rw-=thick; }
+    rVal -= rowV;
+    idx += row.length;
+  }
+  return result;
+}
+function tmWorst(items, rowV, shortSide, longSide, totalV) {
+  const thick = longSide*(rowV/totalV);
+  if (thick<=0) return Infinity;
+  let mx=0;
+  for (const it of items) {
+    const len = shortSide*(it.value/rowV);
+    if (len<=0) continue;
+    mx = Math.max(mx, Math.max(len/thick, thick/len));
+  }
+  return mx;
 }
 
 function computeSectorStats() {
@@ -1736,7 +1793,8 @@ function computeSectorStats() {
       const down = d.stocks.filter(x => x.changePct < -0.1).length;
       const top3 = [...d.stocks].sort((a,b) => b.changePct - a.changePct).slice(0,3);
       return { cat, label:CAT_LABEL[cat]||cat, count:n, up, down,
-        limitUp:d.limitUp, avgChange, avgRS, totalValue:d.totalValue, top3 };
+        limitUp:d.limitUp, avgChange, avgRS, totalValue:d.totalValue, top3,
+        stocks: d.stocks.sort((a,b) => (b.valueYi||0) - (a.valueYi||0)) };
     })
     .sort((a,b) => b.avgChange - a.avgChange);
 }
@@ -1746,64 +1804,103 @@ function openSectorMap() {
   document.body.style.overflow = 'hidden';
   document.getElementById('sectorModal').style.display = 'block';
 
-  const stats  = computeSectorStats();
-  const maxVal = Math.max(...stats.map(s => s.totalValue), 1);
+  const stats = computeSectorStats();
+  const container = document.getElementById('treemapContainer');
+  const CW = container.clientWidth  || 1460;
+  const CH = container.clientHeight || 660;
 
   document.getElementById('sectorSubtitle').textContent =
     `${allStocks.length} 支 · ${stats.length} 板塊` +
-    (taiexPct != null ? ` · 大盤${taiexPct>0?'+':''}${taiexPct.toFixed(2)}%` : '');
+    (taiexPct != null ? ` · 大盤 ${taiexPct>0?'+':''}${taiexPct.toFixed(2)}%` : '');
 
-  // ── Heatmap tiles ──────────────────────────────────────────
-  document.getElementById('sectorGrid').innerHTML = stats.map(s => {
-    const { bg, border, txt } = heatStyle(s.avgChange);
-    const flex = Math.round(s.totalValue / maxVal * 70 + 18);
-    const rsStr = s.avgRS != null
-      ? `<div style="font-size:10px;opacity:.75;margin-top:2px;">vs大盤${s.avgRS>0?'+':''}${s.avgRS.toFixed(2)}%</div>` : '';
-    const limBadge = s.limitUp > 0
-      ? `<span style="font-size:9px;background:rgba(255,34,68,.28);border:1px solid rgba(255,34,68,.5);border-radius:3px;padding:1px 5px;margin-left:5px;">停${s.limitUp}</span>` : '';
-    return `
-      <div class="heat-tile" onclick="sectorMapJump('${s.cat}')"
-        style="flex:${flex} 1 130px;min-width:128px;min-height:108px;
-               background:${bg};border:1px solid ${border};
-               border-radius:10px;padding:12px 13px;position:relative;overflow:hidden;">
-        <div style="font-size:24px;font-weight:800;color:${txt};line-height:1;">${s.avgChange>0?'+':''}${s.avgChange.toFixed(2)}%</div>
-        <div style="font-size:14px;font-weight:700;color:${txt};margin:5px 0 4px;">${s.label}${limBadge}</div>
-        <div style="font-size:10px;color:${txt};opacity:.8;">
-          <span style="color:#66ee99">▲${s.up}</span>&nbsp;<span style="color:#88aaff">▼${s.down}</span>&nbsp;·&nbsp;${s.count}支&nbsp;·&nbsp;${fmtYi(s.totalValue)}
-        </div>
-        ${rsStr}
-        <div style="position:absolute;bottom:6px;right:8px;font-size:9px;opacity:.4;color:${txt};">${s.top3.map(x=>x.name).join('·')}</div>
-      </div>`;
-  }).join('');
+  // ── Legend ──────────────────────────────────────────────────
+  const legend = [
+    {l:'跌停',c:'#124c98'},{l:'-5%',c:'#184280'},{l:'-3%',c:'#1e3868'},
+    {l:'-1%',c:'#243050'},{l:'0%',c:'#2a2a3a'},
+    {l:'+1%',c:'#5a2a36'},{l:'+3%',c:'#8e2238'},{l:'+5%',c:'#a81a35'},{l:'漲停',c:'#c01030'}
+  ];
+  document.getElementById('treemapLegend').innerHTML =
+    legend.map(l=>`<div style="display:flex;align-items:center;gap:3px;">
+      <div style="width:14px;height:10px;border-radius:2px;background:${l.c};"></div>
+      <span>${l.l}</span></div>`).join('') +
+    `<span style="margin-left:12px;color:#4a5a7a;">面積 = 成交額 · 點擊個股開啟詳細分析</span>`;
 
-  // ── Summary table ──────────────────────────────────────────
-  document.getElementById('sectorTable').innerHTML = `
-    <div style="font-size:11px;color:#4a4a6a;margin-bottom:8px;">點擊板塊格子 → 跳至該板塊篩選</div>
-    <table style="width:100%;border-collapse:collapse;font-size:12px;">
-      <thead><tr style="border-bottom:1px solid #1e1e3a;">
-        <th style="text-align:left;padding:6px 8px;color:#8888aa;font-weight:600;">#&nbsp;板塊</th>
-        <th style="text-align:right;padding:6px;color:#8888aa;font-weight:600;">均漲跌%</th>
-        <th style="text-align:right;padding:6px;color:#8888aa;font-weight:600;">vs大盤</th>
-        <th style="text-align:right;padding:6px;color:#8888aa;font-weight:600;">漲/跌</th>
-        <th style="text-align:right;padding:6px;color:#8888aa;font-weight:600;">漲停</th>
-        <th style="text-align:right;padding:6px;color:#8888aa;font-weight:600;">成交額</th>
-        <th style="text-align:left;padding:6px;color:#8888aa;font-weight:600;">今日領漲</th>
-      </tr></thead>
-      <tbody>${stats.map((s,i) => {
-        const pc = s.avgChange >= 0 ? '#ff4466' : '#4488ff';
-        const rc = s.avgRS == null ? '#8888aa' : s.avgRS > 0 ? '#00ff88' : '#ff6688';
-        return `<tr style="border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer;" onclick="sectorMapJump('${s.cat}')"
-          onmouseover="this.style.background='#141428'" onmouseout="this.style.background=''">
-          <td style="padding:7px 8px;font-weight:600;">${i+1}. ${s.label}</td>
-          <td style="text-align:right;padding:7px 6px;color:${pc};font-weight:700;">${s.avgChange>0?'+':''}${s.avgChange.toFixed(2)}%</td>
-          <td style="text-align:right;padding:7px 6px;color:${rc};">${s.avgRS!=null?(s.avgRS>0?'+':'')+s.avgRS.toFixed(2)+'%':'--'}</td>
-          <td style="text-align:right;padding:7px 6px;"><span style="color:#66ee99">▲${s.up}</span>&nbsp;/&nbsp;<span style="color:#88aaff">▼${s.down}</span></td>
-          <td style="text-align:right;padding:7px 6px;color:${s.limitUp>0?'#ff2244':'#8888aa'};">${s.limitUp||'--'}</td>
-          <td style="text-align:right;padding:7px 6px;">${fmtYi(s.totalValue)}</td>
-          <td style="padding:7px 6px;color:#8888aa;font-size:11px;">${s.top3.map(x=>`${x.name}<span style="color:${x.changePct>0?'#ff4466':'#4488ff'}">(${x.changePct>0?'+':''}${x.changePct.toFixed(1)}%)</span>`).join(' · ')}</td>
-        </tr>`;
-      }).join('')}</tbody>
-    </table>`;
+  // ── Sector-level treemap ───────────────────────────────────
+  const sectorItems = stats.map(s=>({ ...s, value: s.totalValue || 1 }));
+  const sectorRects = treemapLayout(sectorItems, 0, 0, CW, CH);
+
+  let html = '';
+  const LABEL_H = 18;
+  const GAP = 1.5; // gap between sector blocks
+
+  for (const sr of sectorRects) {
+    const sx = sr.x + GAP, sy = sr.y + GAP;
+    const sw = sr.w - GAP*2, sh = sr.h - GAP*2;
+    if (sw < 4 || sh < 4) continue;
+
+    const sChg = sr.avgChange;
+    const sClr = sChg >= 0 ? '#ff6680' : '#6699ff';
+
+    // Sector container
+    html += `<div style="position:absolute;left:${sx.toFixed(1)}px;top:${sy.toFixed(1)}px;
+      width:${sw.toFixed(1)}px;height:${sh.toFixed(1)}px;overflow:hidden;border-radius:3px;
+      border:1px solid rgba(255,255,255,.08);box-sizing:border-box;">`;
+
+    // Sector label bar
+    html += `<div onclick="sectorMapJump('${sr.cat}')" style="height:${LABEL_H}px;line-height:${LABEL_H}px;
+      background:rgba(0,0,0,.7);padding:0 5px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;
+      border-bottom:1px solid rgba(255,255,255,.06);overflow:hidden;white-space:nowrap;"
+      onmouseover="this.style.background='rgba(68,136,255,.15)'" onmouseout="this.style.background='rgba(0,0,0,.7)'">
+      <span style="font-size:10px;font-weight:700;color:#c8c8ee;">${sr.label}</span>
+      <span style="font-size:10px;font-weight:700;color:${sClr};">${sChg>0?'+':''}${sChg.toFixed(2)}%</span>
+    </div>`;
+
+    // Stock-level treemap within this sector
+    const innerW = sw - 2;
+    const innerH = sh - LABEL_H - 2;
+    if (innerW > 2 && innerH > 2) {
+      const stockItems = sr.stocks.map(st=>({ ...st, value: Math.max(st.valueYi||0, 0.05) }));
+      const stockRects = treemapLayout(stockItems, 0, 0, innerW, innerH);
+
+      html += `<div style="position:relative;width:${innerW.toFixed(1)}px;height:${innerH.toFixed(1)}px;margin:1px;">`;
+      for (const st of stockRects) {
+        const bg  = stockHeatBg(st.changePct);
+        const tw  = st.w - 1, th = st.h - 1;
+        if (tw < 2 || th < 2) continue;
+
+        const area = tw * th;
+        const showCode = area > 600 && tw > 28 && th > 16;
+        const showPct  = area > 1000 && tw > 32 && th > 24;
+        const showName = area > 2200 && tw > 50 && th > 34;
+        const bigFont  = area > 6000;
+
+        const pClr  = st.changePct >= 0 ? '#ffcccc' : '#bbccff';
+        const pSign = st.changePct > 0 ? '+' : '';
+        const pStr  = `${pSign}${st.changePct.toFixed(area>5000?2:1)}%`;
+
+        html += `<div onclick="closeSectorModal();openModal(allStocks.find(x=>x.code==='${st.code}'))"
+          style="position:absolute;left:${st.x.toFixed(1)}px;top:${st.y.toFixed(1)}px;
+          width:${tw.toFixed(1)}px;height:${th.toFixed(1)}px;
+          background:${bg};cursor:pointer;overflow:hidden;box-sizing:border-box;
+          border:.5px solid rgba(0,0,0,.4);display:flex;flex-direction:column;
+          align-items:center;justify-content:center;padding:1px 2px;
+          transition:filter .12s,z-index 0s;"
+          onmouseover="this.style.filter='brightness(1.4) contrast(1.1)';this.style.zIndex=100;
+            this.title='${st.code} ${st.name}  ${pStr}  ${fmtYi(st.valueYi||0)}'"
+          onmouseout="this.style.filter='';this.style.zIndex=''">`;
+
+        if (showCode) html += `<div style="font-size:${bigFont?10:8}px;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;line-height:1.2;">${st.code}</div>`;
+        if (showName) html += `<div style="font-size:${bigFont?9:7}px;color:rgba(255,255,255,.65);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;line-height:1.1;">${st.name}</div>`;
+        if (showPct)  html += `<div style="font-size:${bigFont?12:9}px;font-weight:900;color:${pClr};line-height:1.2;">${pStr}</div>`;
+
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  container.innerHTML = html;
 }
 
 function closeSectorModal() {
