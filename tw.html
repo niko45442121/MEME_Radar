@@ -106,15 +106,24 @@ td { padding:9px 8px; }
 <!-- Sector Heatmap Modal -->
 <div id="sectorModal" onclick="if(event.target===this)closeSectorModal()">
   <div style="max-width:1500px;margin:0 auto;background:#08081a;border:1px solid #1a1a38;border-radius:12px;overflow:hidden;" onclick="event.stopPropagation()">
-    <div style="padding:10px 16px;border-bottom:1px solid #1a1a38;display:flex;align-items:center;justify-content:space-between;background:#060614;">
+    <div style="padding:8px 16px;border-bottom:1px solid #1a1a38;display:flex;align-items:center;justify-content:space-between;background:#060614;flex-wrap:wrap;gap:8px;">
       <div style="display:flex;align-items:center;gap:12px;">
         <span style="font-size:16px;font-weight:800;color:#e8e8ff;">🗺️ 板塊輪動地圖</span>
         <span id="sectorSubtitle" style="font-size:11px;color:#6688aa;"></span>
       </div>
-      <button onclick="closeSectorModal()" style="padding:5px 13px;border-radius:7px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);color:#8888aa;cursor:pointer;font-size:13px;">✕</button>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div id="tmTabs" style="display:flex;gap:3px;background:rgba(255,255,255,.04);border-radius:6px;padding:2px;">
+          <button class="tm-tab active" data-p="day" onclick="setTreemapPeriod('day')" style="padding:3px 12px;border-radius:4px;border:none;font-size:11px;font-weight:700;cursor:pointer;background:rgba(0,255,136,.15);color:#00ff88;">當日</button>
+          <button class="tm-tab" data-p="week" onclick="setTreemapPeriod('week')" style="padding:3px 12px;border-radius:4px;border:none;font-size:11px;font-weight:700;cursor:pointer;background:transparent;color:#6688aa;">當周</button>
+          <button class="tm-tab" data-p="month" onclick="setTreemapPeriod('month')" style="padding:3px 12px;border-radius:4px;border:none;font-size:11px;font-weight:700;cursor:pointer;background:transparent;color:#6688aa;">當月</button>
+        </div>
+        <span id="tmZoomBadge" style="font-size:10px;color:#4a5a7a;min-width:36px;text-align:center;">1.0x</span>
+        <button onclick="resetTreemapZoom()" style="padding:3px 8px;border-radius:4px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#6688aa;font-size:10px;cursor:pointer;">⟲</button>
+        <button onclick="closeSectorModal()" style="padding:5px 13px;border-radius:7px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);color:#8888aa;cursor:pointer;font-size:13px;">✕</button>
+      </div>
     </div>
     <div style="padding:6px;">
-      <div id="treemapContainer" style="position:relative;width:100%;height:660px;border-radius:6px;overflow:hidden;background:#0a0a18;"></div>
+      <div id="treemapContainer" style="position:relative;width:100%;height:660px;border-radius:6px;overflow:hidden;background:#0a0a18;cursor:grab;"></div>
     </div>
     <div id="treemapLegend" style="padding:6px 14px 10px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:10px;color:#6688aa;"></div>
   </div>
@@ -328,6 +337,7 @@ const PROXIES = [
   { make: u => 'https://corsproxy.io/?' + encodeURIComponent(u), parse: r => r.text() },
 ];
 const LS_SNAP = 'tw_snap_v3';
+const LS_HIST = 'tw_history_v1';
 
 // ── Category sets ──────────────────────────────────────────────
 const MEMORY_SET  = new Set(['2344','2408','4256','3576','5234','3031']);
@@ -425,6 +435,34 @@ function saveSnap(twDate, processed) {
       stocks: processed.map(s=>({ code:s.code, volume:s.volume, changePct:s.changePct }))
     }));
   } catch(e) {}
+}
+
+// ── History for weekly/monthly heatmap ───────────────────────────
+function saveHistory(twDate) {
+  if (!twDate || !allStocks.length) return;
+  const prices = {};
+  allStocks.forEach(s => { prices[s.code] = s.close; });
+  let hist = [];
+  try { hist = JSON.parse(localStorage.getItem(LS_HIST)) || []; } catch(e) {}
+  hist = hist.filter(h => h.d !== twDate);
+  hist.push({ d: twDate, p: prices });
+  if (hist.length > 60) hist = hist.slice(-60);
+  try { localStorage.setItem(LS_HIST, JSON.stringify(hist)); } catch(e) {}
+}
+function getHistoryChanges(period) {
+  if (period === 'day') return null;
+  let hist = [];
+  try { hist = JSON.parse(localStorage.getItem(LS_HIST)) || []; } catch(e) {}
+  if (hist.length < 2) return null;
+  const daysBack = period === 'week' ? 5 : 22;
+  const idx = Math.max(0, hist.length - 1 - daysBack);
+  const oldP = hist[idx].p;
+  const changes = {};
+  allStocks.forEach(s => {
+    const op = oldP[s.code];
+    if (op && op > 0 && s.close > 0) changes[s.code] = (s.close - op) / op * 100;
+  });
+  return Object.keys(changes).length > 0 ? changes : null;
 }
 
 // ── Category ────────────────────────────────────────────────────
@@ -1642,6 +1680,7 @@ async function loadAll() {
   allStocks = processed;
 
   if (!snap || snap.date !== todayDate) saveSnap(todayDate, processed);
+  saveHistory(todayDate);
 
   renderCriteriaCards();
   renderTable();
@@ -1799,21 +1838,20 @@ function computeSectorStats() {
     .sort((a,b) => b.avgChange - a.avgChange);
 }
 
+// ── Treemap state ─────────────────────────────────────────────────
+let tmPeriod = 'day', tmZoom = 1, tmPanX = 0, tmPanY = 0;
+let tmDragging = false, tmDragX = 0, tmDragY = 0, tmZoomBound = false;
+
 function openSectorMap() {
   if (!allStocks.length) return;
   document.body.style.overflow = 'hidden';
   document.getElementById('sectorModal').style.display = 'block';
 
-  const stats = computeSectorStats();
-  const container = document.getElementById('treemapContainer');
-  const CW = container.clientWidth  || 1460;
-  const CH = container.clientHeight || 660;
-
   document.getElementById('sectorSubtitle').textContent =
-    `${allStocks.length} 支 · ${stats.length} 板塊` +
+    `${allStocks.length} 支 · ${computeSectorStats().length} 板塊` +
     (taiexPct != null ? ` · 大盤 ${taiexPct>0?'+':''}${taiexPct.toFixed(2)}%` : '');
 
-  // ── Legend ──────────────────────────────────────────────────
+  // Legend
   const legend = [
     {l:'跌停',c:'#124c98'},{l:'-5%',c:'#184280'},{l:'-3%',c:'#1e3868'},
     {l:'-1%',c:'#243050'},{l:'0%',c:'#2a2a3a'},
@@ -1823,84 +1861,212 @@ function openSectorMap() {
     legend.map(l=>`<div style="display:flex;align-items:center;gap:3px;">
       <div style="width:14px;height:10px;border-radius:2px;background:${l.c};"></div>
       <span>${l.l}</span></div>`).join('') +
-    `<span style="margin-left:12px;color:#4a5a7a;">面積 = 成交額 · 點擊個股開啟詳細分析</span>`;
+    `<span style="margin-left:12px;color:#4a5a7a;">面積=成交額 · 滑鼠滾輪縮放 · 拖曳平移</span>`;
 
-  // ── Sector-level treemap ───────────────────────────────────
-  const sectorItems = stats.map(s=>({ ...s, value: s.totalValue || 1 }));
-  const sectorRects = treemapLayout(sectorItems, 0, 0, CW, CH);
+  // Reset state & render
+  tmPeriod = 'day'; tmZoom = 1; tmPanX = 0; tmPanY = 0;
+  document.querySelectorAll('.tm-tab').forEach(t => {
+    const act = t.dataset.p === 'day';
+    t.style.background = act ? 'rgba(0,255,136,.15)' : 'transparent';
+    t.style.color      = act ? '#00ff88' : '#6688aa';
+  });
+  renderTreemap();
+  if (!tmZoomBound) { setupTreemapZoom(); tmZoomBound = true; }
+}
 
-  let html = '';
-  const LABEL_H = 18;
-  const GAP = 1.5; // gap between sector blocks
+function setTreemapPeriod(p) {
+  tmPeriod = p;
+  tmZoom = 1; tmPanX = 0; tmPanY = 0;
+  document.querySelectorAll('.tm-tab').forEach(t => {
+    const act = t.dataset.p === p;
+    t.style.background = act ? 'rgba(0,255,136,.15)' : 'transparent';
+    t.style.color      = act ? '#00ff88' : '#6688aa';
+  });
+  renderTreemap();
+}
 
-  for (const sr of sectorRects) {
-    const sx = sr.x + GAP, sy = sr.y + GAP;
-    const sw = sr.w - GAP*2, sh = sr.h - GAP*2;
-    if (sw < 4 || sh < 4) continue;
+function renderTreemap() {
+  const container = document.getElementById('treemapContainer');
+  const CW = container.clientWidth  || 1460;
+  const CH = container.clientHeight || 660;
 
-    const sChg = sr.avgChange;
-    const sClr = sChg >= 0 ? '#ff6680' : '#6699ff';
+  // Period-specific changes
+  const pChanges = getHistoryChanges(tmPeriod);
+  const periodLabel = tmPeriod==='week'?'當周':tmPeriod==='month'?'當月':'當日';
+  const noHist = tmPeriod !== 'day' && !pChanges;
 
-    // Sector container
-    html += `<div style="position:absolute;left:${sx.toFixed(1)}px;top:${sy.toFixed(1)}px;
-      width:${sw.toFixed(1)}px;height:${sh.toFixed(1)}px;overflow:hidden;border-radius:3px;
-      border:1px solid rgba(255,255,255,.08);box-sizing:border-box;">`;
-
-    // Sector label bar
-    html += `<div onclick="sectorMapJump('${sr.cat}')" style="height:${LABEL_H}px;line-height:${LABEL_H}px;
-      background:rgba(0,0,0,.7);padding:0 5px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;
-      border-bottom:1px solid rgba(255,255,255,.06);overflow:hidden;white-space:nowrap;"
-      onmouseover="this.style.background='rgba(68,136,255,.15)'" onmouseout="this.style.background='rgba(0,0,0,.7)'">
-      <span style="font-size:10px;font-weight:700;color:#c8c8ee;">${sr.label}</span>
-      <span style="font-size:10px;font-weight:700;color:${sClr};">${sChg>0?'+':''}${sChg.toFixed(2)}%</span>
-    </div>`;
-
-    // Stock-level treemap within this sector
-    const innerW = sw - 2;
-    const innerH = sh - LABEL_H - 2;
-    if (innerW > 2 && innerH > 2) {
-      const stockItems = sr.stocks.map(st=>({ ...st, value: Math.max(st.valueYi||0, 0.05) }));
-      const stockRects = treemapLayout(stockItems, 0, 0, innerW, innerH);
-
-      html += `<div style="position:relative;width:${innerW.toFixed(1)}px;height:${innerH.toFixed(1)}px;margin:1px;">`;
-      for (const st of stockRects) {
-        const bg  = stockHeatBg(st.changePct);
-        const tw  = st.w - 1, th = st.h - 1;
-        if (tw < 2 || th < 2) continue;
-
-        const area = tw * th;
-        const showCode = area > 600 && tw > 28 && th > 16;
-        const showPct  = area > 1000 && tw > 32 && th > 24;
-        const showName = area > 2200 && tw > 50 && th > 34;
-        const bigFont  = area > 6000;
-
-        const pClr  = st.changePct >= 0 ? '#ffcccc' : '#bbccff';
-        const pSign = st.changePct > 0 ? '+' : '';
-        const pStr  = `${pSign}${st.changePct.toFixed(area>5000?2:1)}%`;
-
-        html += `<div onclick="closeSectorModal();openModal(allStocks.find(x=>x.code==='${st.code}'))"
-          style="position:absolute;left:${st.x.toFixed(1)}px;top:${st.y.toFixed(1)}px;
-          width:${tw.toFixed(1)}px;height:${th.toFixed(1)}px;
-          background:${bg};cursor:pointer;overflow:hidden;box-sizing:border-box;
-          border:.5px solid rgba(0,0,0,.4);display:flex;flex-direction:column;
-          align-items:center;justify-content:center;padding:1px 2px;
-          transition:filter .12s,z-index 0s;"
-          onmouseover="this.style.filter='brightness(1.4) contrast(1.1)';this.style.zIndex=100;
-            this.title='${st.code} ${st.name}  ${pStr}  ${fmtYi(st.valueYi||0)}'"
-          onmouseout="this.style.filter='';this.style.zIndex=''">`;
-
-        if (showCode) html += `<div style="font-size:${bigFont?10:8}px;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;line-height:1.2;">${st.code}</div>`;
-        if (showName) html += `<div style="font-size:${bigFont?9:7}px;color:rgba(255,255,255,.65);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;line-height:1.1;">${st.name}</div>`;
-        if (showPct)  html += `<div style="font-size:${bigFont?12:9}px;font-weight:900;color:${pClr};line-height:1.2;">${pStr}</div>`;
-
-        html += '</div>';
-      }
-      html += '</div>';
+  const stats = computeSectorStats();
+  // Override changePct for week/month
+  if (pChanges) {
+    for (const sec of stats) {
+      sec.stocks.forEach(st => {
+        if (pChanges[st.code] != null) st._pct = pChanges[st.code]; else st._pct = st.changePct;
+      });
+      sec.avgChange = sec.stocks.reduce((s,st)=>s+(st._pct??st.changePct),0)/sec.stocks.length;
     }
-    html += '</div>';
+    stats.sort((a,b)=>b.avgChange-a.avgChange);
+  } else {
+    for (const sec of stats) sec.stocks.forEach(st => { st._pct = st.changePct; });
   }
 
-  container.innerHTML = html;
+  // Build HTML
+  const sectorRects = treemapLayout(stats.map(s=>({...s, value:s.totalValue||1})), 0, 0, CW, CH);
+  let html = '';
+  const LABEL_H = 18, GAP = 1.5;
+
+  if (noHist) {
+    html = `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+      flex-direction:column;gap:8px;color:#6688aa;font-size:13px;">
+      <div style="font-size:28px;">📊</div>
+      <div>${periodLabel}資料尚不足</div>
+      <div style="font-size:11px;color:#4a5a7a;">需每日開啟頁面累積歷史收盤價（${tmPeriod==='week'?'≥5':'≥22'}筆）</div>
+    </div>`;
+  } else {
+    for (const sr of sectorRects) {
+      const sx=sr.x+GAP, sy=sr.y+GAP, sw=sr.w-GAP*2, sh=sr.h-GAP*2;
+      if (sw<4||sh<4) continue;
+      const sChg=sr.avgChange, sClr=sChg>=0?'#ff6680':'#6699ff';
+
+      html+=`<div style="position:absolute;left:${sx.toFixed(1)}px;top:${sy.toFixed(1)}px;
+        width:${sw.toFixed(1)}px;height:${sh.toFixed(1)}px;overflow:hidden;border-radius:3px;
+        border:1px solid rgba(255,255,255,.08);box-sizing:border-box;">`;
+
+      html+=`<div onclick="sectorMapJump('${sr.cat}')" style="height:${LABEL_H}px;line-height:${LABEL_H}px;
+        background:rgba(0,0,0,.7);padding:0 5px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;
+        border-bottom:1px solid rgba(255,255,255,.06);overflow:hidden;white-space:nowrap;"
+        onmouseover="this.style.background='rgba(68,136,255,.15)'" onmouseout="this.style.background='rgba(0,0,0,.7)'">
+        <span style="font-size:10px;font-weight:700;color:#c8c8ee;">${sr.label}</span>
+        <span style="font-size:10px;font-weight:700;color:${sClr};">${sChg>0?'+':''}${sChg.toFixed(2)}%</span>
+      </div>`;
+
+      const iW=sw-2, iH=sh-LABEL_H-2;
+      if (iW>2&&iH>2) {
+        const stockRects=treemapLayout(sr.stocks.map(st=>({...st,value:Math.max(st.valueYi||0,.05)})),0,0,iW,iH);
+        html+=`<div style="position:relative;width:${iW.toFixed(1)}px;height:${iH.toFixed(1)}px;margin:1px;">`;
+        for (const st of stockRects) {
+          const chg=st._pct??st.changePct;
+          const bg=stockHeatBg(chg);
+          const tw2=st.w-1,th2=st.h-1;
+          if(tw2<2||th2<2) continue;
+          const area=tw2*th2;
+          const showCode=area>600&&tw2>28&&th2>16;
+          const showPct=area>1000&&tw2>32&&th2>24;
+          const showName=area>2200&&tw2>50&&th2>34;
+          const big=area>6000;
+          const pC=chg>=0?'#ffcccc':'#bbccff';
+          const pS=chg>0?'+':'';
+          const pT=`${pS}${chg.toFixed(area>5000?2:1)}%`;
+
+          html+=`<div onclick="closeSectorModal();openModal(allStocks.find(x=>x.code==='${st.code}'))"
+            style="position:absolute;left:${st.x.toFixed(1)}px;top:${st.y.toFixed(1)}px;
+            width:${tw2.toFixed(1)}px;height:${th2.toFixed(1)}px;
+            background:${bg};cursor:pointer;overflow:hidden;box-sizing:border-box;
+            border:.5px solid rgba(0,0,0,.4);display:flex;flex-direction:column;
+            align-items:center;justify-content:center;padding:1px 2px;
+            transition:filter .12s;"
+            onmouseover="this.style.filter='brightness(1.4) contrast(1.1)';this.style.zIndex=100;
+              this.title='${st.code} ${st.name}  ${periodLabel} ${pT}  ${fmtYi(st.valueYi||0)}'"
+            onmouseout="this.style.filter='';this.style.zIndex=''">`;
+          if(showCode) html+=`<div style="font-size:${big?10:8}px;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;line-height:1.2;">${st.code}</div>`;
+          if(showName) html+=`<div style="font-size:${big?9:7}px;color:rgba(255,255,255,.65);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;line-height:1.1;">${st.name}</div>`;
+          if(showPct)  html+=`<div style="font-size:${big?12:9}px;font-weight:900;color:${pC};line-height:1.2;">${pT}</div>`;
+          html+='</div>';
+        }
+        html+='</div>';
+      }
+      html+='</div>';
+    }
+  }
+
+  container.innerHTML = `<div id="treemapInner" style="width:${CW}px;height:${CH}px;position:relative;transform-origin:0 0;will-change:transform;">${html}</div>`;
+  applyTmTransform();
+}
+
+// ── Zoom & Pan ────────────────────────────────────────────────────
+function applyTmTransform() {
+  const inner = document.getElementById('treemapInner');
+  if (!inner) return;
+  inner.style.transform = `translate(${tmPanX.toFixed(1)}px,${tmPanY.toFixed(1)}px) scale(${tmZoom.toFixed(3)})`;
+  const badge = document.getElementById('tmZoomBadge');
+  if (badge) badge.textContent = tmZoom.toFixed(1) + 'x';
+}
+
+function resetTreemapZoom() {
+  tmZoom=1; tmPanX=0; tmPanY=0;
+  applyTmTransform();
+}
+
+function setupTreemapZoom() {
+  const ctn = document.getElementById('treemapContainer');
+  if (!ctn) return;
+
+  ctn.addEventListener('wheel', e => {
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? 0.2 : -0.2;
+    const newZ  = Math.max(1, Math.min(8, tmZoom + delta * tmZoom * 0.5));
+    const rect  = ctn.getBoundingClientRect();
+    const cx    = e.clientX - rect.left;
+    const cy    = e.clientY - rect.top;
+    // Zoom toward cursor
+    const ratio = newZ / tmZoom;
+    tmPanX = cx - ratio * (cx - tmPanX);
+    tmPanY = cy - ratio * (cy - tmPanY);
+    tmZoom = newZ;
+    if (tmZoom <= 1.01) { tmZoom=1; tmPanX=0; tmPanY=0; }
+    applyTmTransform();
+  }, { passive: false });
+
+  ctn.addEventListener('mousedown', e => {
+    if (tmZoom <= 1.01) return;
+    tmDragging = true;
+    tmDragX = e.clientX; tmDragY = e.clientY;
+    ctn.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!tmDragging) return;
+    tmPanX += e.clientX - tmDragX;
+    tmPanY += e.clientY - tmDragY;
+    tmDragX = e.clientX; tmDragY = e.clientY;
+    applyTmTransform();
+  });
+  document.addEventListener('mouseup', () => {
+    if (!tmDragging) return;
+    tmDragging = false;
+    const ctn2 = document.getElementById('treemapContainer');
+    if (ctn2) ctn2.style.cursor = tmZoom > 1.01 ? 'grab' : '';
+  });
+
+  // Touch support
+  let lastTouchDist = 0;
+  ctn.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) {
+      lastTouchDist = Math.hypot(e.touches[1].clientX-e.touches[0].clientX, e.touches[1].clientY-e.touches[0].clientY);
+    } else if (e.touches.length === 1 && tmZoom > 1.01) {
+      tmDragging = true;
+      tmDragX = e.touches[0].clientX; tmDragY = e.touches[0].clientY;
+    }
+  }, { passive: true });
+  ctn.addEventListener('touchmove', e => {
+    if (e.touches.length === 2) {
+      const d = Math.hypot(e.touches[1].clientX-e.touches[0].clientX, e.touches[1].clientY-e.touches[0].clientY);
+      if (lastTouchDist > 0) {
+        const ratio = d / lastTouchDist;
+        tmZoom = Math.max(1, Math.min(8, tmZoom * ratio));
+        if (tmZoom <= 1.01) { tmZoom=1; tmPanX=0; tmPanY=0; }
+        applyTmTransform();
+      }
+      lastTouchDist = d;
+      e.preventDefault();
+    } else if (tmDragging && e.touches.length === 1) {
+      tmPanX += e.touches[0].clientX - tmDragX;
+      tmPanY += e.touches[0].clientY - tmDragY;
+      tmDragX = e.touches[0].clientX; tmDragY = e.touches[0].clientY;
+      applyTmTransform();
+      e.preventDefault();
+    }
+  }, { passive: false });
+  ctn.addEventListener('touchend', () => { tmDragging=false; lastTouchDist=0; });
 }
 
 function closeSectorModal() {
