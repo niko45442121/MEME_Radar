@@ -354,7 +354,9 @@ td { padding:9px 8px; }
 const HAS_LOCAL_PROXY = location.protocol.startsWith('http') && !location.hostname.endsWith('github.io');
 const PROXIES = [
   ...(HAS_LOCAL_PROXY ? [{ make: u => '/proxy?url=' + encodeURIComponent(u), parse: r => r.text() }] : []),
-  { make: u => 'https://r.jina.ai/' + u, parse: r => r.text() },
+  // Without x-respond-with, r.jina.ai renders the body as markdown — HTML inside
+  // the TWSE RWD payload becomes literal newlines and breaks JSON.parse.
+  { make: u => 'https://r.jina.ai/' + u, headers: { 'x-respond-with': 'text' }, parse: r => r.text() },
   { make: u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),  parse: r => r.text() },
   { make: u => 'https://api.allorigins.win/get?url='  + encodeURIComponent(u),  parse: r => r.json().then(j => j.contents) },
   { make: u => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u), parse: r => r.text() },
@@ -837,11 +839,15 @@ async function proxiedFetch(url) {
   let lastErr;
   for (const proxy of PROXIES) {
     try {
-      const r = await fetch(proxy.make(url), { cache: 'no-store', signal: AbortSignal.timeout(20000) });
+      const r = await fetch(proxy.make(url), {
+        // The TPEx payload is ~4MB and takes ~9s through a public proxy, longer
+        // still with three fetches in flight; the local proxy answers in under 1s.
+        cache: 'no-store', headers: proxy.headers, signal: AbortSignal.timeout(45000),
+      });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const text = await proxy.parse(r);
       if (!text || typeof text !== 'string') throw new Error('empty response');
-      // r.jina.ai wraps the body in a markdown preamble; JSON starts at the first bracket.
+      // Some proxies prepend a preamble; the payload starts at the first bracket.
       const start = Math.min(...['[', '{'].map(ch => { const i = text.indexOf(ch); return i < 0 ? Infinity : i; }));
       if (!isFinite(start)) throw new Error('no JSON in response');
       return JSON.parse(text.slice(start));
