@@ -293,13 +293,14 @@ td { padding:9px 8px; }
                 <th>股票</th>
                 <th onclick="sortBy('close')" style="text-align:right;">收盤 <span class="sort-arr" id="sa-close">↕</span></th>
                 <th onclick="sortBy('changePct')" style="text-align:right;">漲跌% <span class="sort-arr" id="sa-changePct">↕</span></th>
+                <th onclick="sortBy('rsTsmc')" style="text-align:right;">贏台積 <span class="sort-arr" id="sa-rsTsmc">↕</span></th>
                 <th onclick="sortBy('valueYi')" style="text-align:right;">成交額/量比 <span class="sort-arr" id="sa-valueYi">↕</span></th>
                 <th onclick="sortBy('amplitude')" style="text-align:right;">振幅 <span class="sort-arr" id="sa-amplitude">↕</span></th>
                 <th style="min-width:150px;">信號</th>
               </tr>
             </thead>
             <tbody id="tableBody">
-              <tr><td colspan="7" style="text-align:center;padding:40px;color:#8888aa;font-size:13px;">⏳ 載入中...</td></tr>
+              <tr><td colspan="8" style="text-align:center;padding:40px;color:#8888aa;font-size:13px;">⏳ 載入中...</td></tr>
             </tbody>
           </table>
         </div>
@@ -403,6 +404,7 @@ let searchText  = '';
 let sortCol     = 'score';
 let sortDir     = -1;
 let taiexPct    = null;
+let tsmcPct     = null;
 let cdVal       = 300;
 let cdTotal     = 300;
 let cdInterval  = null;
@@ -592,6 +594,7 @@ function signals(s) {
   if (s.amplitude>=8)          out.push(['大振幅', 'background:rgba(68,136,255,.12);color:#4488ff;border:1px solid rgba(68,136,255,.35)']);
   if (s.close>=5&&s.close<=30) out.push(['甜蜜價', 'background:rgba(170,68,255,.12);color:#aa44ff;border:1px solid rgba(170,68,255,.35)']);
   if (s.rs != null && s.rs >= 3) out.push(['跑贏大盤', 'background:rgba(0,255,136,.08);color:#00cc66;border:1px solid rgba(0,255,136,.25)']);
+  if (s.rsTsmc != null && s.rsTsmc >= 3) out.push(['贏台積電', 'background:rgba(255,180,0,.1);color:#ffb400;border:1px solid rgba(255,180,0,.3)']);
   if (hasPrev) {
     if (s.consecDays>=2)
       out.push([`▲${s.consecDays}連板`, 'background:rgba(255,34,68,.3);color:#ff2244;border:1px solid rgba(255,34,68,.7);font-weight:800;']);
@@ -618,7 +621,7 @@ function renderTable() {
 
   const tbody = document.getElementById('tableBody');
   if (!filtered.length) {
-    tbody.innerHTML=`<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-secondary);font-size:13px;">${searchText ? '找不到符合的股票' : '此板塊暫無資料'}</td></tr>`;
+    tbody.innerHTML=`<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text-secondary);font-size:13px;">${searchText ? '找不到符合的股票' : '此板塊暫無資料'}</td></tr>`;
     return;
   }
   tbody.innerHTML='';
@@ -630,6 +633,9 @@ function renderTable() {
       : '';
     const rsLine   = s.rs != null
       ? `<div style="font-size:10px;color:${s.rs>0?'#00cc66':s.rs<0?'#ff6688':'var(--text-secondary)'};margin-top:1px;">vs大盤${s.rs>0?'+':''}${s.rs.toFixed(1)}%</div>`
+      : '';
+    const tsmcLine = s.rsTsmc != null
+      ? `<div style="font-size:12px;font-weight:600;color:${s.rsTsmc>0?'#ffb400':s.rsTsmc<0?'#ff6688':'var(--text-secondary)'};">${s.rsTsmc>0?'+':''}${s.rsTsmc.toFixed(1)}%</div>`
       : '';
     const catLbl   = CAT_LABEL[s.cat] || s.cat;
 
@@ -648,6 +654,7 @@ function renderTable() {
         <div style="font-size:11px;color:${pctColor};opacity:.7;">${s.change!=null?(s.change>=0?'+':'')+fmtPrice(s.change):'--'}</div>
         ${rsLine}
       </td>
+      <td style="text-align:right;">${tsmcLine || '<span style="color:var(--text-secondary);font-size:11px;">--</span>'}</td>
       <td style="text-align:right;font-size:12px;">${fmtYi(s.valueYi)}${volLine}</td>
       <td style="text-align:right;font-size:12px;">${s.amplitude.toFixed(1)}%</td>
       <td>${sigs.map(([t,st])=>`<span class="badge" style="${st}">${t}</span>`).join('')}</td>
@@ -1432,8 +1439,13 @@ async function openModal(s) {
     </div>
     ${s.rs!=null?`<div class="dash-hdr-sep"></div>
     <div class="dash-info-block">
-      <div>相對強弱 <span style="color:${s.rs>=0?'#00ff88':'#ff4466'};">${s.rs>0?'+':''}${s.rs.toFixed(2)}%</span></div>
+      <div>vs大盤 <span style="color:${s.rs>=0?'#00ff88':'#ff4466'};">${s.rs>0?'+':''}${s.rs.toFixed(2)}%</span></div>
       <div>妖股評分 <span style="color:#f7c948;">${s.score.toFixed(1)}</span></div>
+    </div>`:''}
+    ${s.rsTsmc!=null?`<div class="dash-hdr-sep"></div>
+    <div class="dash-info-block">
+      <div>vs台積電 <span style="color:${s.rsTsmc>=0?'#ffb400':'#ff4466'};">${s.rsTsmc>0?'+':''}${s.rsTsmc.toFixed(2)}%</span></div>
+      <div>台積電 <span style="color:${tsmcPct>=0?'#ff4466':'#4488ff'};">${tsmcPct>0?'+':''}${tsmcPct.toFixed(2)}%</span></div>
     </div>`:''}`;
 
   document.getElementById('mLoading').style.display = 'block';
@@ -1631,6 +1643,9 @@ async function openModal(s) {
     const rsStr  = s.rs!=null
       ? (s.rs>2?`強於大盤 +${s.rs.toFixed(2)}%`:s.rs>0?`略強大盤 +${s.rs.toFixed(2)}%`:s.rs>-2?`略弱大盤 ${s.rs.toFixed(2)}%`:`弱於大盤 ${s.rs.toFixed(2)}%`)
       : '--';
+    const tsmcStr = s.rsTsmc!=null
+      ? (s.rsTsmc>3?`明顯贏台積 +${s.rsTsmc.toFixed(2)}%`:s.rsTsmc>0?`小贏台積 +${s.rsTsmc.toFixed(2)}%`:s.rsTsmc>-3?`小輸台積 ${s.rsTsmc.toFixed(2)}%`:`明顯輸台積 ${s.rsTsmc.toFixed(2)}%`)
+      : (s.code==='2330' ? '本身即台積電' : '--');
     const biasLevel = bias20!=null ? (Math.abs(bias20)>15?'乖離過大，留意回歸':Math.abs(bias20)>8?'乖離偏高，注意拉回':'乖離正常') : '--';
     document.getElementById('mTechOverview').innerHTML = `
       <div class="panel-title" style="margin-bottom:8px;">📈 技術分析總覽</div>
@@ -1639,6 +1654,7 @@ async function openModal(s) {
       <div class="tech-row"><span class="tr-k">量價關係</span><span style="color:#c8c8ee;">${vpStr}</span></div>
       <div class="tech-row"><span class="tr-k">均線結構</span><span style="color:#c8c8ee;">${maStr}</span></div>
       <div class="tech-row"><span class="tr-k">相對強弱</span><span style="color:${s.rs!=null&&s.rs>0?'#00ff88':'#ff4466'};">${rsStr}</span></div>
+      <div class="tech-row"><span class="tr-k">vs 台積電</span><span style="color:${s.rsTsmc!=null&&s.rsTsmc>0?'#ffb400':'#ff4466'};">${tsmcStr}</span></div>
       <div class="tech-row"><span class="tr-k">乖離評估</span><span style="color:${Math.abs(bias20||0)>10?'#f7c948':'#c8c8ee'};">${biasLevel}</span></div>
       <div class="tech-row"><span class="tr-k">KD狀態</span><span style="color:${kLast>dLast?'#00ff88':'#ff4466'};">${kLast?`K:${kLast.toFixed(1)} D:${dLast.toFixed(1)} ${kLast>dLast?'多方排列↑':'空方排列↓'}`:'--'}</span></div>
       <div class="tech-row"><span class="tr-k">MACD動能</span><span style="color:${difL>deaL?'#00ff88':'#ff4466'};">${difL!=null?(difL>0?'零軸上方 '+(difL>deaL?'擴張':'收斂'):'零軸下方 '+(difL>deaL?'收斂':'擴張')):'--'}</span></div>`;
@@ -1683,7 +1699,7 @@ async function loadAll() {
   if (!twseRaw.length && !tpexRaw.length) {
     setStatus('無資料（可能為非交易日）', true);
     document.getElementById('tableBody').innerHTML=
-      `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--accent-gold);font-size:13px;">⚠️ 台股資料取得失敗（可能為非交易日或服務暫停）</td></tr>`;
+      `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--accent-gold);font-size:13px;">⚠️ 台股資料取得失敗（可能為非交易日或服務暫停）</td></tr>`;
     ['breadthPanel','limitUpList','consecList'].forEach(id=>{
       document.getElementById(id).innerHTML=`<div style="text-align:center;padding:16px;color:var(--text-secondary);font-size:12px;">無資料</div>`;
     });
@@ -1712,7 +1728,12 @@ async function loadAll() {
     ...(Array.isArray(twseRaw)?twseRaw:[]).map(r=>processRaw(r,'TWSE')).filter(Boolean),
     ...(Array.isArray(tpexRaw)?tpexRaw:[]).map(r=>processRaw(r,'TPEx')).filter(Boolean),
   ];
-  processed.forEach(s => { s.rs = taiexPct != null ? s.changePct - taiexPct : null; });
+  // 台積電是權值王，個股跑贏它比跑贏大盤更能看出資金是否輪動到中小型股
+  tsmcPct = processed.find(s => s.code === '2330')?.changePct ?? null;
+  processed.forEach(s => {
+    s.rs     = taiexPct != null ? s.changePct - taiexPct : null;
+    s.rsTsmc = tsmcPct  != null && s.code !== '2330' ? s.changePct - tsmcPct : null;
+  });
   processed.sort((a,b)=>b.score-a.score);
   allStocks = processed;
 
@@ -1824,6 +1845,7 @@ function openDailyFocus() {
   const volBreak   = sorted.filter(s=>s.volRatio!=null&&s.volRatio>=2&&s.changePct>0).sort((a,b)=>b.volRatio-a.volRatio).slice(0,12);
   const consecs    = sorted.filter(s=>s.consecDays>=2).sort((a,b)=>b.consecDays-a.consecDays);
   const highAmp    = [...sorted].sort((a,b)=>b.amplitude-a.amplitude).slice(0,10);
+  const beatTsmc   = sorted.filter(s=>s.rsTsmc!=null&&s.rsTsmc>=3).sort((a,b)=>b.rsTsmc-a.rsTsmc);
   const sectorStats = computeSectorStats();
 
   // Color helpers
@@ -1872,13 +1894,14 @@ function openDailyFocus() {
         ${limitUps.length?`<div style="background:rgba(255,34,68,.15);border:1px solid rgba(255,34,68,.3);border-radius:6px;padding:4px 10px;"><span style="color:#ff4466;font-weight:800;">${limitUps.length}</span><span style="color:#ffaaaa;"> 漲停</span></div>`:''}
         ${limitDns.length?`<div style="background:rgba(68,136,255,.15);border:1px solid rgba(68,136,255,.3);border-radius:6px;padding:4px 10px;"><span style="color:#4488ff;font-weight:800;">${limitDns.length}</span><span style="color:#aabbff;"> 跌停</span></div>`:''}
         ${taiexPct!=null?`<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:4px 10px;"><span style="color:${pc(taiexPct)};font-weight:700;">大盤 ${pf(taiexPct)}</span></div>`:''}
+        ${tsmcPct!=null?`<div style="background:rgba(255,180,0,.08);border:1px solid rgba(255,180,0,.2);border-radius:6px;padding:4px 10px;"><span style="color:${pc(tsmcPct)};font-weight:700;">台積電 ${pf(tsmcPct)}</span><span style="color:#ffb400;margin-left:6px;">${beatTsmc.length} 支跑贏</span></div>`:''}
       </div>
     </div>
     <div style="margin-top:10px;">${sectorBar(upCount, downCount, sorted.length)}</div>
   </div>`;
 
-  // ── 3-column card grid ──────────────────────────────────────
-  html += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px;">`;
+  // ── Card grid ───────────────────────────────────────────────
+  html += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px;">`;
 
   // Card 1: 今日強勢股
   html += `<div style="background:rgba(0,0,0,.4);border:1px solid #1a1a38;border-radius:10px;overflow:hidden;">
@@ -1922,7 +1945,20 @@ function openDailyFocus() {
     </div>
   </div>`;
 
-  html += `</div>`; // close 3-col grid
+  // Card 4: 贏過台積電
+  html += `<div style="background:rgba(0,0,0,.4);border:1px solid #1a1a38;border-radius:10px;overflow:hidden;">
+    <div style="padding:10px 12px;border-bottom:1px solid #1a1a38;display:flex;align-items:center;justify-content:space-between;">
+      <span style="font-size:12px;font-weight:700;color:#ffb400;">🏆 跑贏台積電</span>
+      <span style="font-size:10px;color:#4a5a7a;">${tsmcPct!=null?`台積 ${pf(tsmcPct)}`:'--'}</span>
+    </div>
+    <div style="padding:4px 0;max-height:360px;overflow-y:auto;">
+      ${beatTsmc.length ? `<table style="width:100%;border-collapse:collapse;font-size:11px;">
+        ${beatTsmc.slice(0,12).map(s=>sRow(s,`<td style="padding:5px 6px;text-align:right;color:#ffb400;font-weight:700;">+${s.rsTsmc.toFixed(1)}%</td>`)).join('')}
+      </table>` : `<div style="padding:30px;text-align:center;color:#4a5a7a;font-size:11px;">今日無個股明顯贏過台積電</div>`}
+    </div>
+  </div>`;
+
+  html += `</div>`; // close card grid
 
   // ── 2-column: sector ranking + high amplitude + losers ─────
   html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">`;
