@@ -175,8 +175,12 @@ td { padding:9px 8px; }
 
         <!-- Left: K-line chart -->
         <div style="border-right:1px solid #1a1a38;padding:8px 10px;">
-          <div style="font-size:10px;color:#5566aa;margin-bottom:4px;letter-spacing:.05em;">K線主圖（日線）－含布林通道 / MA5 / MA20 / MA60</div>
-          <canvas id="mainChart" style="width:100%;display:block;"></canvas>
+          <div style="font-size:10px;color:#5566aa;margin-bottom:4px;letter-spacing:.05em;">K線主圖（日線）－含布林通道 / MA5 / MA20 / MA60<span style="color:#3a4a6a;margin-left:8px;">滑鼠移到K棒看詳細</span></div>
+          <div id="chartInfoBar" style="min-height:34px;background:rgba(0,0,0,.45);border:1px solid #1a1a38;border-radius:6px;padding:5px 8px;margin-bottom:4px;font-size:10.5px;line-height:1.55;color:#6688aa;"></div>
+          <div id="chartWrap" style="position:relative;cursor:crosshair;">
+            <canvas id="mainChart" style="width:100%;display:block;"></canvas>
+            <canvas id="chartOverlay" style="position:absolute;left:0;top:0;width:100%;pointer-events:none;"></canvas>
+          </div>
         </div>
 
         <!-- Right: analysis panels -->
@@ -1356,6 +1360,110 @@ function drawMainChart(canvas, timestamps, open, high, low, close, volume, ma5, 
     ctx.lineTo(xc, YOFF.vol - 4);
     ctx.stroke();
   }
+
+  // Geometry + series the crosshair overlay needs to map cursor → bar
+  chartState = {
+    W, TOTAL_H, ML, MR, bw, n, SEC, YOFF, MT, MB, kMin, kMax,
+    series: { timestamps, open, high, low, close, volume, ma5, ma20, ma60, bollUpper, bollLower, K, D, dif, dea, bar, rsi },
+  };
+  drawCrosshair(null);
+}
+
+// ── Crosshair / bar inspector ────────────────────────────────────
+let chartState = null, crosshairBound = false;
+
+function drawCrosshair(idx, cursorY) {
+  const cv = document.getElementById('chartOverlay');
+  if (!cv || !chartState) return;
+  const { W, TOTAL_H, ML, MR, bw, n, kMin, kMax, SEC, YOFF, MT, MB, series } = chartState;
+  const PR = window.devicePixelRatio || 1;
+  cv.width  = Math.round(W * PR);
+  cv.height = Math.round(TOTAL_H * PR);
+  cv.style.height = TOTAL_H + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(PR, 0, 0, PR, 0, 0);
+  ctx.clearRect(0, 0, W, TOTAL_H);
+
+  if (idx == null) { renderChartInfo(n - 1, false); return; }
+
+  const x = ML + (idx + 0.5) * bw;
+  ctx.save();
+  ctx.setLineDash([3, 3]);
+  ctx.strokeStyle = 'rgba(255,255,255,.45)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, TOTAL_H); ctx.stroke();
+
+  // Horizontal line + price tag, only while the cursor is over the K-line pane
+  if (cursorY != null && cursorY >= YOFF.kline && cursorY <= YOFF.kline + SEC.kline) {
+    ctx.beginPath(); ctx.moveTo(ML, cursorY); ctx.lineTo(W - MR, cursorY); ctx.stroke();
+    ctx.setLineDash([]);
+    const usable = SEC.kline - MT - MB;
+    const price  = kMax - (cursorY - YOFF.kline - MT) / usable * (kMax - kMin);
+    const label  = fmtPrice(price);
+    ctx.font = '9px sans-serif';
+    const tw = ctx.measureText(label).width + 8;
+    ctx.fillStyle = 'rgba(255,255,255,.9)';
+    ctx.fillRect(ML - tw - 2, cursorY - 7, tw, 14);
+    ctx.fillStyle = '#0a0a18';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, ML - tw / 2 - 2, cursorY);
+  }
+  ctx.restore();
+
+  // Ring the highlighted candle
+  ctx.strokeStyle = 'rgba(255,255,255,.6)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(ML + idx * bw, YOFF.kline + MT, bw, SEC.kline - MT - MB);
+
+  renderChartInfo(idx, true);
+}
+
+function renderChartInfo(idx, hovering) {
+  const el = document.getElementById('chartInfoBar');
+  if (!el || !chartState) return;
+  const s = chartState.series;
+  if (idx == null || s.close[idx] == null) { el.innerHTML = ''; return; }
+
+  const o = s.open[idx], h = s.high[idx], l = s.low[idx], c = s.close[idx];
+  const prev = idx > 0 ? s.close[idx - 1] : null;
+  const chg  = prev != null ? c - prev : null;
+  const chgP = prev ? chg / prev * 100 : null;
+  const col  = chg == null ? '#c8c8ee' : chg >= 0 ? '#ff4466' : '#4488ff';
+  const d    = s.timestamps[idx] ? new Date(s.timestamps[idx] * 1000) : null;
+  const dStr = d ? `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}` : '--';
+  const vol  = s.volume[idx];
+  // Yahoo reports shares; Taiwan quotes lots (1 lot = 1000 shares)
+  const volStr = vol >= 1e7 ? (vol/1e7).toFixed(1)+'萬張' : vol >= 1000 ? Math.round(vol/1000)+'張' : vol;
+
+  const kv = (k, v, c2) => `<span style="color:#5566aa;">${k}</span> <span style="color:${c2||'#c8c8ee'};font-weight:600;">${v}</span>`;
+  const num = (v, dp=2) => v == null ? '--' : v.toFixed(dp);
+
+  el.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;">
+      <span style="color:${hovering?'#f7c948':'#5566aa'};font-weight:700;">${dStr}${hovering?'':'（最新）'}</span>
+      ${kv('開', fmtPrice(o))} ${kv('高', fmtPrice(h), '#ff6680')} ${kv('低', fmtPrice(l), '#6699ff')} ${kv('收', fmtPrice(c), col)}
+      ${chgP != null ? `<span style="color:${col};font-weight:700;">${chg>=0?'+':''}${fmtPrice(chg)} (${chg>=0?'+':''}${chgP.toFixed(2)}%)</span>` : ''}
+      ${kv('量', volStr)}
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:2px;">
+      ${kv('MA5', num(s.ma5[idx]), '#f7c948')} ${kv('MA20', num(s.ma20[idx]), '#00ff88')} ${kv('MA60', num(s.ma60[idx]), '#cc66ff')}
+      ${kv('K', num(s.K[idx],1), '#f7c948')} ${kv('D', num(s.D[idx],1), '#00ff88')}
+      ${kv('DIF', num(s.dif[idx],3), '#f7c948')} ${kv('MACD', num(s.dea[idx],3), '#00ff88')}
+      ${kv('RSI', num(s.rsi[idx],1), '#cc66ff')}
+    </div>`;
+}
+
+function setupChartCrosshair() {
+  const wrap = document.getElementById('chartWrap');
+  if (!wrap) return;
+  wrap.addEventListener('mousemove', e => {
+    if (!chartState) return;
+    const { ML, bw, n } = chartState;
+    const r = wrap.getBoundingClientRect();
+    const idx = Math.floor((e.clientX - r.left - ML) / bw);
+    drawCrosshair(idx >= 0 && idx < n ? idx : null, e.clientY - r.top);
+  });
+  wrap.addEventListener('mouseleave', () => drawCrosshair(null));
 }
 
 // ── Gauge drawing ─────────────────────────────────────────────────
@@ -1503,6 +1611,7 @@ async function openModal(s) {
     // Draw K-line chart
     requestAnimationFrame(() => {
       drawMainChart(document.getElementById('mainChart'), T,O,H,L,C,V, ma5,ma20,ma60,bollUpper,bollLower,K,D,dif,dea,bar,rsiArr);
+      if (!crosshairBound) { setupChartCrosshair(); crosshairBound = true; }
     });
 
     // ── 主力燈號 ──────────────────────────────────────────────────
