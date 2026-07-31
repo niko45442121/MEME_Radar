@@ -345,11 +345,14 @@ td { padding:9px 8px; }
 
 <script>
 // ── Constants ─────────────────────────────────────────────────
+// serve.py exposes /proxy — same-origin, no rate limit. Skipped on static hosts (GitHub Pages).
+const HAS_LOCAL_PROXY = location.protocol.startsWith('http') && !location.hostname.endsWith('github.io');
 const PROXIES = [
+  ...(HAS_LOCAL_PROXY ? [{ make: u => '/proxy?url=' + encodeURIComponent(u), parse: r => r.text() }] : []),
+  { make: u => 'https://r.jina.ai/' + u, parse: r => r.text() },
   { make: u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),  parse: r => r.text() },
   { make: u => 'https://api.allorigins.win/get?url='  + encodeURIComponent(u),  parse: r => r.json().then(j => j.contents) },
   { make: u => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u), parse: r => r.text() },
-  { make: u => 'https://corsproxy.io/?' + encodeURIComponent(u), parse: r => r.text() },
 ];
 const LS_SNAP = 'tw_snap_v3';
 const LS_HIST = 'tw_history_v1';
@@ -823,18 +826,37 @@ async function proxiedFetch(url) {
   let lastErr;
   for (const proxy of PROXIES) {
     try {
-      const r = await fetch(proxy.make(url), { signal: AbortSignal.timeout(9000) });
+      const r = await fetch(proxy.make(url), { cache: 'no-store', signal: AbortSignal.timeout(20000) });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const text = await proxy.parse(r);
       if (!text || typeof text !== 'string') throw new Error('empty response');
-      const trimmed = text.trimStart();
-      if (trimmed[0] === '<') throw new Error('HTML response');
-      return JSON.parse(text);
+      // r.jina.ai wraps the body in a markdown preamble; JSON starts at the first bracket.
+      const start = Math.min(...['[', '{'].map(ch => { const i = text.indexOf(ch); return i < 0 ? Infinity : i; }));
+      if (!isFinite(start)) throw new Error('no JSON in response');
+      return JSON.parse(text.slice(start));
     } catch(e) { lastErr = e; }
   }
   throw lastErr;
 }
-async function fetchTWSE()  { return proxiedFetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'); }
+// STOCK_DAY_ALL only publishes hours after close, so today's session is read from
+// the RWD endpoint (same 1373 rows, array-of-arrays) and reshaped to match.
+async function fetchTWSE() {
+  const d = new Date();
+  const ymd = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+  try {
+    const res = await proxiedFetch(`https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=${ymd}&type=ALLBUT0999&response=json`);
+    const rows = res?.tables?.find(t => t.fields?.[0]?.includes('證券代號'))?.data;
+    if (res?.stat === 'OK' && rows?.length) {
+      return rows.map(r => ({
+        Date: res.date, Code: r[0], Name: r[1],
+        TradeVolume: r[2], Transaction: r[3], TradeValue: r[4],
+        OpeningPrice: r[5], HighestPrice: r[6], LowestPrice: r[7], ClosingPrice: r[8],
+        Change: (String(r[9]).includes('green') || String(r[9]).includes('-') ? '-' : '') + String(r[10]).replace(/,/g,''),
+      }));
+    }
+  } catch(e) {}
+  return proxiedFetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL');
+}
 async function fetchTPEx()  { return proxiedFetch('https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes'); }
 async function fetchIndex() { return proxiedFetch('https://openapi.twse.com.tw/v1/exchangeReport/MI_INDEX'); }
 async function fetchYahoo(code, market) {
