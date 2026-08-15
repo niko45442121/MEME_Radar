@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>美股雷達 | 妖股偵測器</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+:root {
+  --bg-deep: #05050f;
+  --bg-card: #0d0d1f;
+  --bg-hover: #141428;
+  --accent-green: #00ff88;
+  --accent-gold: #f7c948;
+  --accent-red: #ff4466;
+  --accent-blue: #4488ff;
+  --accent-purple: #aa44ff;
+  --accent-cyan: #22d3ee;
+  --text-primary: #e8e8ff;
+  --text-secondary: #8888aa;
+  --border: #1e1e3a;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg-deep); color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang TC', 'Segoe UI', sans-serif;
+  min-height: 100vh; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--bg-deep); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.num { font-variant-numeric: tabular-nums; font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
+.info-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+.badge { display:inline-flex; align-items:center; padding:2px 7px; border-radius:4px;
+  font-size:10px; font-weight:600; white-space:nowrap; margin-right:3px; }
+.stock-row { transition: background .15s; border-bottom: 1px solid var(--border); }
+.stock-row:hover { background: var(--bg-hover); }
+th { font-size:11px; font-weight:600; letter-spacing:.05em; text-transform:uppercase;
+  color:var(--text-secondary); padding:10px 8px; white-space:nowrap;
+  border-bottom:1px solid var(--border); cursor:pointer; user-select:none; }
+th:hover { color: var(--text-primary); }
+td { padding: 9px 8px; font-size: 13px; }
+.cat-pill { padding:4px 12px; border-radius:20px; font-size:12px; cursor:pointer;
+  transition:all .15s; white-space:nowrap; border:1px solid var(--border);
+  background:var(--bg-card); color:var(--text-secondary); }
+.cat-pill.active { background:rgba(0,255,136,.12); color:var(--accent-green); border-color:rgba(0,255,136,.4); }
+.cat-pill:not(.active):hover { color:var(--text-primary); border-color:rgba(255,255,255,.2); }
+.score-circle { width:38px; height:38px; border-radius:50%; display:flex;
+  align-items:center; justify-content:center; font-weight:700; font-size:12px; }
+.sidebar-item { display:flex; align-items:center; justify-content:space-between;
+  padding:7px 8px; border-radius:8px; margin-bottom:2px; }
+.sidebar-item:hover { background: var(--bg-hover); }
+.sec-bar { height:5px; border-radius:3px; background:#151530; overflow:hidden; }
+.sec-fill { height:100%; border-radius:3px; }
+@media (max-width: 900px) { .hide-sm { display:none; } td, th { padding:8px 5px; font-size:12px; } }
+</style>
+</head>
+<body>
+
+<div style="max-width:1400px;margin:0 auto;padding:16px;">
+
+  <!-- 頁首 -->
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+    <span style="font-size:19px;font-weight:800;letter-spacing:-.02em;">🇺🇸 美股雷達</span>
+    <span id="modeBadge" style="font-size:11px;color:var(--text-secondary);background:var(--bg-card);
+      border:1px solid var(--border);padding:2px 10px;border-radius:4px;">載入中…</span>
+    <div style="flex:1"></div>
+    <a href="tw.html" style="font-size:11px;color:var(--accent-gold);border:1px solid rgba(247,201,72,.3);
+      padding:2px 10px;border-radius:4px;text-decoration:none;white-space:nowrap;">📊 台股雷達</a>
+    <a href="trend.html" style="font-size:11px;color:var(--accent-cyan);border:1px solid rgba(34,211,238,.3);
+      padding:2px 10px;border-radius:4px;text-decoration:none;white-space:nowrap;">📡 趨勢雷達</a>
+    <a href="index.html" style="font-size:11px;color:var(--accent-blue);border:1px solid rgba(68,136,255,.3);
+      padding:2px 10px;border-radius:4px;text-decoration:none;white-space:nowrap;">⚡ 妖幣雷達</a>
+  </div>
+
+  <!-- 大盤概覽 -->
+  <div id="market" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:8px;margin-bottom:14px;"></div>
+
+  <div style="display:grid;grid-template-columns:1fr;gap:14px;" id="mainGrid">
+
+    <!-- 板塊輪動 -->
+    <div class="info-card">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <span style="font-size:15px;font-weight:800;">🗺️ 板塊輪動</span>
+        <span style="font-size:10px;color:var(--text-secondary);">11 大類股 ETF</span>
+        <div style="flex:1"></div>
+        <div style="display:flex;gap:5px;">
+          <div class="cat-pill active" data-per="d1"  onclick="setPeriod('d1')">當日</div>
+          <div class="cat-pill"        data-per="d5"  onclick="setPeriod('d5')">一週</div>
+          <div class="cat-pill"        data-per="d20" onclick="setPeriod('d20')">一月</div>
+        </div>
+      </div>
+      <div id="sectors" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;"></div>
+    </div>
+
+    <!-- 主表 + 榜單 -->
+    <div style="display:grid;grid-template-columns:1fr;gap:14px;" id="tableGrid">
+      <div class="info-card" style="padding:0;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:14px 16px 10px;">
+          <span style="font-size:15px;font-weight:800;">⚡ 妖股偵測 TOP</span>
+          <span id="rowCount" style="font-size:11px;color:var(--text-secondary);"></span>
+          <div style="flex:1"></div>
+          <input id="search" placeholder="搜尋代號 / 名稱" oninput="render()"
+            style="background:var(--bg-deep);border:1px solid var(--border);border-radius:6px;
+            padding:4px 10px;font-size:12px;color:var(--text-primary);width:150px;outline:none;">
+          <button onclick="showFormula()" style="padding:4px 12px;border-radius:6px;
+            background:rgba(247,201,72,.1);border:1px solid rgba(247,201,72,.3);
+            color:var(--accent-gold);font-size:12px;cursor:pointer;">📐 評分公式</button>
+        </div>
+        <div style="display:flex;gap:6px;padding:0 16px 10px;overflow-x:auto;">
+          <div class="cat-pill active" data-f="all"    onclick="setFilter('all')">全部</div>
+          <div class="cat-pill" data-f="surge"  onclick="setFilter('surge')">🚀 暴漲 ≥10%</div>
+          <div class="cat-pill" data-f="strong" onclick="setFilter('strong')">💪 強勢 ≥5%</div>
+          <div class="cat-pill" data-f="volume" onclick="setFilter('volume')">🔥 爆量 ≥3x</div>
+          <div class="cat-pill" data-f="consec" onclick="setFilter('consec')">📈 連續強勢</div>
+          <div class="cat-pill" data-f="high"   onclick="setFilter('high')">🎯 52週新高</div>
+        </div>
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;">
+            <thead><tr id="thead"></tr></thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;">
+        <div class="info-card">
+          <h3 style="font-size:13px;font-weight:700;color:var(--accent-red);margin-bottom:10px;">🚀 暴漲榜（≥10%）</h3>
+          <div id="boardSurge"></div>
+        </div>
+        <div class="info-card">
+          <h3 style="font-size:13px;font-weight:700;color:var(--accent-gold);margin-bottom:10px;">🔥 連續強勢榜（2連+）</h3>
+          <div id="boardConsec"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:14px;font-size:11px;color:var(--text-secondary);line-height:1.8;">
+    資料：yfinance（day_gainers / most_actives / small_cap_gainers 聯集）· 每日美股收盤後更新<br>
+    「連續強勢」＝連續交易日漲幅 ≥5%（對應台股連板）·「量比」＝今日量 ÷ 昨日量 ·「RS」＝相對 SPY 表現<br>
+    ⚠️ 資料僅供研究參考，不構成投資建議。
+  </div>
+</div>
+
+<!-- 評分公式彈窗 -->
+<div id="modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:50;
+  align-items:center;justify-content:center;padding:16px;" onclick="if(event.target===this)closeModal()">
+  <div class="info-card" style="max-width:520px;width:100%;max-height:85vh;overflow-y:auto;">
+    <div style="display:flex;align-items:center;margin-bottom:14px;">
+      <h3 style="font-size:15px;font-weight:800;color:var(--accent-green);">📐 妖股評分公式（100 分）</h3>
+      <div style="flex:1"></div>
+      <button onclick="closeModal()" style="background:none;border:none;color:var(--text-secondary);
+        font-size:20px;cursor:pointer;line-height:1;">×</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px;font-size:12px;">
+      <div><div style="font-weight:700;color:var(--accent-gold);margin-bottom:3px;">🔥 成交量比 28 分</div>
+        <div style="color:var(--text-secondary);line-height:1.6;">今日量 ÷ 昨日量。5x 以上滿分、3x=22、2x=14、1.5x=7。爆量是主力介入的核心訊號。</div></div>
+      <div><div style="font-weight:700;color:var(--accent-red);margin-bottom:3px;">🚀 漲幅動能 20 分</div>
+        <div style="color:var(--text-secondary);line-height:1.6;">美股無漲停限制，每 1% = 2.5 分，+8% 即滿分。</div></div>
+      <div><div style="font-weight:700;color:#ff2244;margin-bottom:3px;">📈 連續強勢 20 分</div>
+        <div style="color:var(--text-secondary);line-height:1.6;">連續交易日漲幅 ≥5%。2 日以上滿分、1 日 6 分。對應台股「連板」概念，籌碼鎖定訊號。</div></div>
+      <div><div style="font-weight:700;color:var(--accent-green);margin-bottom:3px;">💵 成交額 12 分</div>
+        <div style="color:var(--text-secondary);line-height:1.6;">對數計分：$10M 起算、$3B 滿分。</div></div>
+      <div><div style="font-weight:700;color:var(--accent-blue);margin-bottom:3px;">⚡ 日內振幅 12 分</div>
+        <div style="color:var(--text-secondary);line-height:1.6;">當日高低差每 1% = 1.2 分，10% 滿分。</div></div>
+      <div><div style="font-weight:700;color:var(--accent-purple);margin-bottom:3px;">💎 甜蜜價位 8 分</div>
+        <div style="color:var(--text-secondary);line-height:1.6;">$5~$100 = 8 分（流動性最佳）；$3~5 或 $100~300 = 4 分。</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let D = null, filter = 'all', period = 'd1', sortKey = 'score', sortAsc = false;
+
+const COLS = [
+  { k:'score', t:'評分', fmt:r=>{
+      const c = r.score>=70?'#ff2244':r.score>=50?'#ff8c00':r.score>=35?'#f7c948':'#8888aa';
+      const bg = r.score>=70?'rgba(255,34,68,.15)':r.score>=50?'rgba(255,140,0,.12)':
+                 r.score>=35?'rgba(247,201,72,.1)':'rgba(136,136,170,.08)';
+      return `<div class="score-circle num" style="background:${bg};color:${c};border:1px solid ${c}44">${r.score}</div>`; } },
+  { k:'code', t:'代號', fmt:r=>`
+      <div style="font-weight:700;color:var(--text-primary)">${r.code}</div>
+      <div class="hide-sm" style="font-size:10px;color:var(--text-secondary)">${r.name||''}</div>
+      <div style="margin-top:3px">${(r.sig||[]).map(s=>sigBadge(s)).join('')}</div>` },
+  { k:'close', t:'收盤', fmt:r=>`<span class="num">$${r.close}</span>` },
+  { k:'chg', t:'漲跌%', fmt:r=>{
+      const c = r.chg>=0?'#00ff88':'#ff4466';
+      return `<span class="num" style="color:${c};font-weight:700">${r.chg>=0?'+':''}${r.chg.toFixed(2)}%</span>`; } },
+  { k:'rs', t:'相對SPY', cls:'hide-sm', fmt:r=>{
+      const c = r.rs>=0?'#00ff88':'#ff4466';
+      return `<span class="num" style="color:${c}">${r.rs>=0?'+':''}${r.rs.toFixed(2)}%</span>`; } },
+  { k:'vol_ratio', t:'量比', fmt:r=>{
+      if (r.vol_ratio==null) return '<span style="color:var(--text-secondary)">—</span>';
+      const c = r.vol_ratio>=5?'#ff2244':r.vol_ratio>=3?'#ff8c00':r.vol_ratio>=2?'#f7c948':'#8888aa';
+      return `<span class="num" style="color:${c};font-weight:600">${r.vol_ratio.toFixed(1)}x</span>`; } },
+  { k:'turnover', t:'成交額', cls:'hide-sm', fmt:r=>`<span class="num">$${r.turnover>=1000?(r.turnover/1000).toFixed(1)+'B':r.turnover.toFixed(0)+'M'}</span>` },
+  { k:'amp', t:'振幅', cls:'hide-sm', fmt:r=>`<span class="num" style="color:#4488ff">${r.amp.toFixed(1)}%</span>` },
+  { k:'off_high', t:'距52週高', cls:'hide-sm', fmt:r=>{
+      const c = r.off_high<=1?'#00ff88':r.off_high<=10?'#f7c948':'#8888aa';
+      return `<span class="num" style="color:${c}">-${r.off_high.toFixed(1)}%</span>`; } },
+];
+
+const SIG_STYLE = {
+  '暴漲':      'background:rgba(255,34,68,.2);color:#ff2244;border:1px solid rgba(255,34,68,.5)',
+  '強勢':      'background:rgba(0,255,136,.12);color:#00ff88;border:1px solid rgba(0,255,136,.35)',
+  '重挫':      'background:rgba(68,136,255,.12);color:#4488ff;border:1px solid rgba(68,136,255,.35)',
+  '爆量':      'background:rgba(247,201,72,.15);color:#f7c948;border:1px solid rgba(247,201,72,.4)',
+  '跳空':      'background:rgba(170,68,255,.12);color:#aa44ff;border:1px solid rgba(170,68,255,.35)',
+  '52週新高':  'background:rgba(0,255,136,.15);color:#00ff88;border:1px solid rgba(0,255,136,.4)',
+  '跑贏大盤':  'background:rgba(34,211,238,.12);color:#22d3ee;border:1px solid rgba(34,211,238,.35)',
+};
+function sigBadge(s) {
+  const st = SIG_STYLE[s] || (s.includes('連強')
+    ? 'background:rgba(255,34,68,.3);color:#ff2244;border:1px solid rgba(255,34,68,.7);font-weight:800'
+    : 'background:var(--bg-hover);color:var(--text-secondary);border:1px solid var(--border)');
+  return `<span class="badge" style="${st}">${s}</span>`;
+}
+
+const FILTERS = {
+  all:    () => true,
+  surge:  r => r.chg >= 10,
+  strong: r => r.chg >= 5,
+  volume: r => (r.vol_ratio || 0) >= 3,
+  consec: r => r.consec >= 2,
+  high:   r => r.off_high <= 0.5,
+};
+
+function setFilter(f) {
+  filter = f;
+  document.querySelectorAll('[data-f]').forEach(e => e.classList.toggle('active', e.dataset.f === f));
+  render();
+}
+function setPeriod(p) {
+  period = p;
+  document.querySelectorAll('[data-per]').forEach(e => e.classList.toggle('active', e.dataset.per === p));
+  renderSectors();
+}
+function setSort(k) {
+  if (sortKey === k) sortAsc = !sortAsc; else { sortKey = k; sortAsc = false; }
+  render();
+}
+function showFormula() { document.getElementById('modal').style.display = 'flex'; }
+function closeModal()  { document.getElementById('modal').style.display = 'none'; }
+
+function renderMarket() {
+  document.getElementById('market').innerHTML = D.market.map(m => {
+    const isVix = m.code === '^VIX';
+    const up = m.chg >= 0;
+    const c = isVix ? (up ? '#ff4466' : '#00ff88') : (up ? '#00ff88' : '#ff4466');
+    return `<div class="info-card" style="padding:12px 14px;">
+      <div style="font-size:10px;color:var(--text-secondary)">${m.name}</div>
+      <div style="display:flex;align-items:baseline;gap:8px;margin-top:3px">
+        <span class="num" style="font-size:19px;font-weight:800">${m.close}</span>
+        <span class="num" style="font-size:13px;font-weight:700;color:${c}">${up?'+':''}${m.chg.toFixed(2)}%</span>
+      </div></div>`;
+  }).join('');
+}
+
+function renderSectors() {
+  const vals = D.sectors.map(s => Math.abs(s[period]));
+  const max = Math.max(...vals, 0.5);
+  const sorted = [...D.sectors].sort((a, b) => b[period] - a[period]);
+  document.getElementById('sectors').innerHTML = sorted.map(s => {
+    const v = s[period], up = v >= 0, c = up ? '#00ff88' : '#ff4466';
+    return `<div style="background:var(--bg-deep);border:1px solid var(--border);border-radius:8px;padding:9px 11px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+        <span style="font-size:12px;font-weight:600">${s.name}
+          <span style="font-size:10px;color:var(--text-secondary);margin-left:3px">${s.code}</span></span>
+        <span class="num" style="font-size:13px;font-weight:700;color:${c}">${up?'+':''}${v.toFixed(2)}%</span>
+      </div>
+      <div class="sec-bar"><div class="sec-fill" style="width:${Math.abs(v)/max*100}%;background:${c}"></div></div>
+    </div>`;
+  }).join('');
+}
+
+function renderBoards() {
+  const item = (r, right) => `
+    <div class="sidebar-item">
+      <div><span style="font-weight:700;font-size:13px">${r.code}</span>
+        <span class="hide-sm" style="font-size:10px;color:var(--text-secondary);margin-left:5px">${r.name||''}</span></div>
+      <div style="text-align:right">${right(r)}</div>
+    </div>`;
+  const s = D.boards.surge, c = D.boards.consec;
+  document.getElementById('boardSurge').innerHTML = s.length
+    ? s.map(r => item(r, x => `<div class="num" style="color:#ff2244;font-weight:800;font-size:13px">+${x.chg.toFixed(1)}%</div>
+        <div class="num" style="font-size:10px;color:var(--text-secondary)">$${x.close}</div>`)).join('')
+    : `<div style="text-align:center;padding:16px;color:var(--text-secondary);font-size:12px">今日無暴漲股</div>`;
+  document.getElementById('boardConsec').innerHTML = c.length
+    ? c.map(r => item(r, x => `<div style="color:#ff2244;font-weight:800;font-size:13px">▲${x.consec}連強</div>
+        <div class="num" style="font-size:10px;color:var(--text-secondary)">+${x.chg.toFixed(1)}%</div>`)).join('')
+    : `<div style="text-align:center;padding:16px;color:var(--text-secondary);font-size:12px">今日無連續強勢股</div>`;
+}
+
+function render() {
+  if (!D) return;
+  document.getElementById('modeBadge').textContent =
+    `${D.date} 收盤 · 掃描 ${D.count} 檔 · SPY ${D.bench_chg>=0?'+':''}${D.bench_chg}% · 更新 ${D.generated}`;
+
+  document.getElementById('thead').innerHTML = COLS.map(c =>
+    `<th class="${c.cls||''}" onclick="setSort('${c.k}')">${c.t}${
+      sortKey===c.k ? `<span style="opacity:.5"> ${sortAsc?'▲':'▼'}</span>` : ''}</th>`).join('');
+
+  const q = (document.getElementById('search').value || '').toLowerCase();
+  let rows = D.rows.filter(FILTERS[filter]).filter(r =>
+    !q || r.code.toLowerCase().includes(q) || (r.name||'').toLowerCase().includes(q));
+  rows.sort((a, b) => {
+    const x = a[sortKey] ?? 0, y = b[sortKey] ?? 0;
+    if (typeof x === 'string') return sortAsc ? x.localeCompare(y) : y.localeCompare(x);
+    return sortAsc ? x - y : y - x;
+  });
+
+  document.getElementById('rowCount').textContent = `${rows.length} 檔`;
+  document.getElementById('tbody').innerHTML = rows.length
+    ? rows.slice(0, 120).map(r => `<tr class="stock-row">${COLS.map(c =>
+        `<td class="${c.cls||''}">${c.fmt(r)}</td>`).join('')}</tr>`).join('')
+    : `<tr><td colspan="${COLS.length}" style="text-align:center;padding:36px;color:var(--text-secondary)">無符合條件的標的</td></tr>`;
+}
+
+(async function init() {
+  try {
+    const r = await fetch('data/us_radar.json?v=' + Date.now());
+    D = await r.json();
+    renderMarket(); renderSectors(); renderBoards(); render();
+  } catch (e) {
+    document.getElementById('modeBadge').textContent = '資料載入失敗';
+    document.getElementById('tbody').innerHTML =
+      `<tr><td style="padding:30px;text-align:center;color:var(--accent-red)">無法載入 data/us_radar.json</td></tr>`;
+  }
+})();
+</script>
+</body>
+</html>
