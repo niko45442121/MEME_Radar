@@ -242,8 +242,13 @@ td { padding: 9px 8px; }
             <button class="cat-pill" onclick="setCategory('real-world-assets',this)">RWA</button>
             <button class="cat-pill" onclick="setCategory('depin',this)">DePIN</button>
           </div>
-          <div style="margin-left:12px;font-size:11px;color:#8888aa;white-space:nowrap;flex-shrink:0;">
-            點擊行展開 · <span id="countdown">60</span>s 自動刷新
+          <div style="margin-left:12px;font-size:11px;color:#8888aa;white-space:nowrap;flex-shrink:0;display:flex;align-items:center;gap:10px;">
+            <button id="deadToggle" onclick="toggleDead(this)"
+              style="padding:3px 10px;border-radius:6px;font-size:11px;cursor:pointer;
+              background:rgba(255,34,68,.12);border:1px solid rgba(255,34,68,.35);color:#ff4466;">
+              ☠️ 隱藏崩盤幣</button>
+            <span id="deadCount" style="color:#ff4466;"></span>
+            <span>點擊行展開 · <span id="countdown">60</span>s 自動刷新</span>
           </div>
         </div>
       </div>
@@ -342,6 +347,7 @@ td { padding: 9px 8px; }
 // ============================================================
 let allCoins = [];
 let currentCategory = 'all';
+let hideDead = true;          // 預設隱藏崩盤幣（拉高出貨殘骸／連續崩跌）
 let currentTab = 'surface';
 let sortField = 'score';
 let sortDir = 1; // 1 = 高→低(降序), -1 = 低→高(升序)
@@ -381,8 +387,44 @@ function isStablecoin(coin) {
 // ============================================================
 // 評分計算
 // ============================================================
+// ============================================================
+// 死亡判定：拉高出貨後的殘骸／連續崩跌 → 不是機會，是接刀
+// （2026-08 修：舊版把「距ATH遠」「市值小」無條件當利多，
+//   結果 TUT 這種 6 天前見 ATH、7 日 -34% 的崩盤幣拿 74 分）
+// ============================================================
+function deathCheck(coin) {
+  const c24 = coin.price_change_percentage_24h_in_currency ?? coin.price_change_percentage_24h ?? 0;
+  const c7  = coin.price_change_percentage_7d_in_currency  ?? null;
+  const c30 = coin.price_change_percentage_30d_in_currency ?? null;
+  const price = coin.current_price || 0;
+  const ath   = coin.ath || 0;
+  const athAgeD = coin.ath_date
+    ? (Date.now() - new Date(coin.ath_date).getTime()) / 86400000 : 9999;
+  const atl = coin.atl || 0;
+
+  // ① 剛爆掉的殘骸：ATH 在 45 天內、現價已腰斬到 ATH 四成以下，且短線仍未止跌
+  if (ath > 0 && athAgeD <= 45 && price < ath * 0.4 && (c7 === null || c7 < 5))
+    return { dead: true, why: '拉高出貨殘骸' };
+
+  // ② 連續崩跌：7 日重挫且今天還在跌
+  if (c7 !== null && c7 <= -25 && c24 <= 0)
+    return { dead: true, why: '連續崩跌' };
+
+  // ③ 長期下降趨勢：月線腰斬且週線續跌
+  if (c30 !== null && c30 <= -50 && c7 !== null && c7 <= -10)
+    return { dead: true, why: '長期下降' };
+
+  // ④ 貼近歷史低點：離 ATL 不到 25%，等於一路破底
+  if (atl > 0 && price > 0 && (price - atl) / atl < 0.25)
+    return { dead: true, why: '貼近歷史低點' };
+
+  return { dead: false, why: '' };
+}
+
 function calcScore(coin) {
-  const change = coin.price_change_percentage_24h || 0;
+  const change = coin.price_change_percentage_24h_in_currency ?? coin.price_change_percentage_24h ?? 0;
+  const c7     = coin.price_change_percentage_7d_in_currency ?? null;
+  const c30    = coin.price_change_percentage_30d_in_currency ?? null;
   const mc     = coin.market_cap || 0;
   const vol    = coin.total_volume || 0;
   const high   = coin.high_24h || coin.current_price || 0;
@@ -393,12 +435,14 @@ function calcScore(coin) {
   const volRatio  = mc > 0 ? vol / mc : 0;
   const amplitude = low > 0 ? (high - low) / low : 0;
   const athDist   = ath > 0 ? (ath - price) / ath : 0;
+  const death     = deathCheck(coin);
 
-  // 1. 量/市值換手 (0–30)
+  // 1. 量/市值換手 (0–30)　量價配合：放量下跌是出貨，打對折
   let volScore;
   if (volRatio >= 1.0) volScore = 30;
   else if (volRatio >= 0.5) volScore = 22 + ((volRatio - 0.5) / 0.5) * 8;
   else volScore = (volRatio / 0.5) * 22;
+  if (change < 0) volScore *= 0.5;          // 放量下殺 ≠ 主力進場
 
   // 2. 日內振幅 (0–20)
   let ampScore;
@@ -407,7 +451,7 @@ function calcScore(coin) {
   else if (amplitude >= 0.1) ampScore = ((amplitude - 0.1) / 0.2) * 14;
   else ampScore = 0;
 
-  // 3. 小市值加權 (0–20)
+  // 3. 小市值加權 (0–20)　崩掉才變小的不算「小而美」
   let mcScore;
   if      (mc < 10e6)  mcScore = 20;
   else if (mc < 50e6)  mcScore = 18;
@@ -416,6 +460,7 @@ function calcScore(coin) {
   else if (mc < 500e6) mcScore = 5;
   else if (mc < 1e9)   mcScore = 2;
   else                 mcScore = 0;
+  if (c30 !== null && c30 <= -40) mcScore *= 0.3;   // 一個月腰斬＝縮水不是小市值
 
   // 4. 拉盤初期窗口 (0–20)
   let pumpScore;
@@ -426,18 +471,34 @@ function calcScore(coin) {
   else if (change >= -5 && change <  1)   pumpScore = 2;
   else                                    pumpScore = 0;
 
-  // 5. 上行空間（距 ATH 越遠越高分，0–10）
+  // 5. 上行空間 (0–10)　★關鍵修正：要有反彈確認才算「空間」，否則是接刀
   let upScore;
-  if      (athDist >= 0.8) upScore = 10;
+  const recovering = change > 0 || (c7 !== null && c7 > 0);
+  if (!recovering)         upScore = 0;
+  else if (athDist >= 0.8) upScore = 10;
   else if (athDist >= 0.5) upScore = 7;
   else if (athDist >= 0.3) upScore = 5;
   else if (athDist >= 0.1) upScore = 2;
   else                     upScore = 0;
 
+  // 6. 中期動能 (−15 ~ +10)　新增：7 日趨勢，過濾「今天反彈但整週在崩」
+  let momScore = 0;
+  if (c7 !== null) {
+    if      (c7 >= 30) momScore = 10;
+    else if (c7 >= 10) momScore = 7;
+    else if (c7 >= 0)  momScore = 3;
+    else if (c7 >= -15) momScore = -3;
+    else if (c7 >= -30) momScore = -9;
+    else                momScore = -15;
+  }
+
+  let total = Math.round(volScore + ampScore + mcScore + pumpScore + upScore + momScore);
+  if (death.dead) total = Math.min(total, 12);      // 死亡幣封頂 12 分，直接沉底
+  total = Math.max(0, Math.min(100, total));
+
   return {
-    total: Math.min(100, Math.round(volScore + ampScore + mcScore + pumpScore + upScore)),
-    volScore, ampScore, mcScore, pumpScore, upScore,
-    volRatio, amplitude, athDist
+    total, volScore, ampScore, mcScore, pumpScore, upScore, momScore,
+    volRatio, amplitude, athDist, c7, c30, death
   };
 }
 
@@ -454,7 +515,12 @@ function getSignals(coin, s) {
   if (change >= 5  && change <= 40)              tags.push({ label: '拉盤初期',color: '#f7c948', bg: 'rgba(247,201,72,.15)' });
   else if (change > 40)                          tags.push({ label: '加速中',  color: '#ff6622', bg: 'rgba(255,102,34,.15)' });
   if (ath > 0 && price / ath > 0.85)            tags.push({ label: '逼近ATH', color: '#aa44ff', bg: 'rgba(170,68,255,.15)' });
-  if (ath > 0 && price / ath < 0.3)             tags.push({ label: '脫離底部',color: '#4488ff', bg: 'rgba(68,136,255,.13)' });
+  // 「脫離底部」只有在真的在漲時才成立，否則是崩到底部
+  const _c7 = coin.price_change_percentage_7d_in_currency ?? null;
+  if (ath > 0 && price / ath < 0.3 && (change > 0 || (_c7 !== null && _c7 > 0)))
+    tags.push({ label: '脫離底部',color: '#4488ff', bg: 'rgba(68,136,255,.13)' });
+  if (_c7 !== null && _c7 <= -25)               tags.push({ label: `週跌${Math.round(_c7)}%`, color: '#ff4466', bg: 'rgba(255,68,102,.18)' });
+  if (s.death && s.death.dead)                  tags.push({ label: `☠️ ${s.death.why}`, color: '#ff2244', bg: 'rgba(255,34,68,.25)' });
   return tags;
 }
 
@@ -491,16 +557,24 @@ function scoreStyle(n) {
 // 渲染主表格
 // ============================================================
 function renderTable(coins) {
+  if (coins && coins.length) window.__coins = coins;   // 供崩盤幣開關重繪
   // 全部模式下隱藏低分大市值（score < 15 且 MC > $2B）
   const MIN_SCORE_LARGE_CAP = 15;
+  let deadCount = 0;
   const filtered = coins.filter(c => {
     if (isStablecoin(c)) return false;
+    const s = calcScore(c);
+    if (s.death && s.death.dead) {
+      deadCount++;
+      if (hideDead) return false;          // 預設隱藏崩盤幣（右上開關可切換）
+    }
     if (currentCategory === 'all') {
-      const s = calcScore(c);
       if (s.total < MIN_SCORE_LARGE_CAP && (c.market_cap || 0) > 2e9) return false;
     }
     return true;
   });
+  const _dc = document.getElementById('deadCount');
+  if (_dc) _dc.textContent = deadCount ? `已濾除 ${deadCount} 檔崩盤幣` : '';
   const sorted = [...filtered].sort((a, b) => {
     const as = calcScore(a), bs = calcScore(b);
     let av, bv;
@@ -768,20 +842,25 @@ function renderTrending(coins) {
     el.innerHTML = '<p style="font-size:12px;color:#8888aa;text-align:center;padding:12px;">暫無資料</p>';
     return;
   }
+  // 熱門榜是 CoinGecko 自家排名，沒經過我們的評分 → 交叉比對主資料標出崩盤幣
+  const byId = new Map((window.__coins || []).map(c => [c.id, c]));
   el.innerHTML = coins.map((item, i) => {
     const c = item.item;
+    const full = byId.get(c.id);
+    const death = full ? deathCheck(full) : { dead: false, why: '' };
     const pct = c.data?.price_change_percentage_24h?.usd;
     const pctStr = pct != null
       ? `<span style="color:${pct >= 0 ? '#00ff88' : '#ff4466'};font-weight:700;font-size:11px;">${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%</span>`
       : `<span style="font-size:10px;color:#00ff88;">🔥 熱議</span>`;
     return `
-    <div class="trend-item">
+    <div class="trend-item" style="${death.dead ? 'opacity:.5;' : ''}">
       <div style="display:flex;align-items:center;gap:8px;">
         <span style="font-size:11px;color:#4a4a6a;width:14px;text-align:right;">${i + 1}</span>
-        <img src="${c.thumb || ''}" style="width:20px;height:20px;border-radius:50%;" onerror="this.style.display='none'">
+        <img src="${c.thumb || ''}" style="width:20px;height:20px;border-radius:50%;${death.dead ? 'filter:grayscale(1);' : ''}" onerror="this.style.display='none'">
         <div>
           <span style="font-size:12px;font-weight:600;">${c.name}</span>
           <span style="font-size:10px;color:#8888aa;margin-left:4px;">${c.symbol}</span>
+          ${death.dead ? `<span style="font-size:9px;color:#ff2244;background:rgba(255,34,68,.2);border:1px solid rgba(255,34,68,.5);padding:1px 4px;border-radius:3px;margin-left:4px;white-space:nowrap;">☠️ ${death.why}</span>` : ''}
         </div>
       </div>
       ${pctStr}
@@ -807,7 +886,7 @@ function renderGainers(coins) {
     const s   = calcScore(c);
     const sc  = scoreStyle(s.total);
     return `
-    <div class="trend-item">
+    <div class="trend-item" style="${s.death.dead ? 'opacity:.5;' : ''}" title="${s.death.dead ? '崩盤幣反抽：' + s.death.why : ''}">
       <div style="display:flex;align-items:center;gap:8px;">
         <img src="${c.image || ''}" style="width:18px;height:18px;border-radius:50%;" onerror="this.style.display='none'">
         <div>
@@ -910,7 +989,7 @@ async function _apiFetch(url) {
 function _mktUrl(cat, page, order = 'volume_desc') {
   const p = new URLSearchParams({
     vs_currency: 'usd', order, per_page: 100, page,
-    sparkline: true, price_change_percentage: '24h',
+    sparkline: true, price_change_percentage: '24h,7d,30d',
   });
   if (cat !== 'all') p.set('category', cat);
   return `https://api.coingecko.com/api/v3/coins/markets?${p}`;
@@ -997,6 +1076,15 @@ function startCountdown() {
 // 分類切換
 // ============================================================
 let baseCoins = []; // 保存全部模式的完整資料集
+
+function toggleDead(btn) {
+  hideDead = !hideDead;
+  btn.textContent = hideDead ? '☠️ 隱藏崩盤幣' : '👁 顯示崩盤幣';
+  btn.style.background = hideDead ? 'rgba(255,34,68,.12)' : 'rgba(136,136,170,.1)';
+  btn.style.borderColor = hideDead ? 'rgba(255,34,68,.35)' : '#1e1e3a';
+  btn.style.color = hideDead ? '#ff4466' : '#8888aa';
+  renderTable(window.__coins || []);
+}
 
 async function setCategory(cat, btn) {
   currentCategory = cat;
