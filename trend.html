@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>趨勢雷達 | 台股 · 美股</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+:root {
+  --bg-deep: #05050f;
+  --bg-card: #0d0d1f;
+  --bg-hover: #141428;
+  --accent-green: #00ff88;
+  --accent-gold: #f7c948;
+  --accent-red: #ff4466;
+  --accent-blue: #4488ff;
+  --accent-purple: #aa44ff;
+  --accent-cyan: #22d3ee;
+  --text-primary: #e8e8ff;
+  --text-secondary: #8888aa;
+  --border: #1e1e3a;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg-deep); color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang TC', 'Segoe UI', sans-serif;
+  min-height: 100vh; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--bg-deep); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.num { font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
+.info-card { background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 16px; }
+.tab {
+  padding: 6px 16px; border-radius: 8px; font-size: 13px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--bg-card);
+  color: var(--text-secondary); transition: all .15s; white-space: nowrap;
+}
+.tab.active { background: rgba(0,255,136,.12); color: var(--accent-green);
+  border-color: rgba(0,255,136,.4); }
+.tab:not(.active):hover { color: var(--text-primary); border-color: rgba(255,255,255,.2); }
+.row { border-bottom: 1px solid var(--border); transition: background .15s; }
+.row:hover { background: var(--bg-hover); }
+.badge { display:inline-flex; align-items:center; padding:2px 7px;
+  border-radius:4px; font-size:10px; font-weight:600; white-space:nowrap; }
+th { font-size:11px; font-weight:600; letter-spacing:.05em; text-transform:uppercase;
+  color:var(--text-secondary); padding:10px 8px; white-space:nowrap;
+  border-bottom:1px solid var(--border); cursor:pointer; user-select:none; }
+th:hover { color: var(--text-primary); }
+td { padding: 10px 8px; font-size: 13px; }
+/* 安全墊軌道：反轉點在軌道左端，現價位置＝距離百分比 */
+.rail { position:relative; height:6px; border-radius:3px; background:#151530;
+  overflow:hidden; min-width:80px; }
+.rail-fill { position:absolute; left:0; top:0; bottom:0; border-radius:3px; }
+.rail-mark { position:absolute; top:-2px; bottom:-2px; width:2px; background:var(--text-primary); opacity:.55; }
+@media (max-width: 820px) {
+  .hide-sm { display: none; }
+  td, th { padding: 8px 5px; font-size: 12px; }
+}
+</style>
+</head>
+<body>
+
+<div style="max-width:1280px;margin:0 auto;padding:16px;">
+
+  <!-- 頁首 -->
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+    <span style="font-size:19px;font-weight:800;letter-spacing:-.02em;">📡 趨勢雷達</span>
+    <span id="meta" style="font-size:11px;color:var(--text-secondary);background:var(--bg-card);
+      border:1px solid var(--border);padding:2px 10px;border-radius:4px;">載入中…</span>
+    <div style="flex:1"></div>
+    <a href="tw.html" style="font-size:11px;color:var(--accent-gold);border:1px solid rgba(247,201,72,.3);
+      padding:2px 10px;border-radius:4px;text-decoration:none;">📊 妖股偵測</a>
+    <a href="index.html" style="font-size:11px;color:var(--accent-blue);border:1px solid rgba(68,136,255,.3);
+      padding:2px 10px;border-radius:4px;text-decoration:none;">⚡ 妖幣雷達</a>
+  </div>
+
+  <!-- 市場切換 -->
+  <div style="display:flex;gap:8px;margin-bottom:12px;">
+    <div class="tab active" data-mkt="tw" onclick="setMarket('tw')">🇹🇼 台股</div>
+    <div class="tab" data-mkt="us" onclick="setMarket('us')">🇺🇸 美股</div>
+  </div>
+
+  <!-- 摘要卡 -->
+  <div id="summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+    gap:8px;margin-bottom:14px;"></div>
+
+  <!-- 分類切換 -->
+  <div id="catTabs" style="display:flex;gap:6px;margin-bottom:12px;overflow-x:auto;padding-bottom:4px;"></div>
+
+  <!-- 表格 -->
+  <div class="info-card" style="padding:0;overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;">
+      <thead><tr id="thead"></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <!-- 說明 -->
+  <div style="margin-top:14px;font-size:11px;color:var(--text-secondary);line-height:1.8;">
+    <div><b style="color:var(--text-primary);">反轉點</b>＝跌破(多方)／突破(空方)即趨勢翻轉的價位，可直接當移動停損。
+      <b style="color:var(--text-primary);">距離</b>＝現價到反轉點還有多少緩衝。</div>
+    <div><b style="color:var(--text-primary);">動能</b>：🔥過載（追高風險）｜⚡活躍｜🌱啟動｜💤停滯｜🌤復甦</div>
+    <div><b style="color:var(--text-primary);">在榜</b>＝近 7 個交易日出現在雷達的天數，越多代表趨勢越穩定。</div>
+    <div style="margin-top:6px;">指標：Chandelier Exit（台股 21日/4.2×ATR、美股 22日/3.8×ATR，通道取收盤價高低）
+      · 資料：TWSE / TPEx OpenAPI · yfinance</div>
+    <div style="margin-top:4px;">⚠️ 趨勢轉變非交易訊號，資料僅供研究參考，不構成投資建議。</div>
+  </div>
+</div>
+
+<script>
+const CATS = [
+  { id:'flip',    name:'近期可能變盤', icon:'🔵', color:'#4488ff', desc:'正在測試多空關鍵位' },
+  { id:'steady',  name:'上升趨勢穩健', icon:'🟢', color:'#00ff88', desc:'走勢標準、離支撐安全' },
+  { id:'coiling', name:'強勢股蓄勢待發', icon:'🟡', color:'#f7c948', desc:'多頭中回檔整理' },
+  { id:'exhaust', name:'多頭力竭',     icon:'🟠', color:'#ff9944', desc:'多頭但逼近支撐、動能轉弱' },
+  { id:'bear',    name:'空方區',       icon:'🔴', color:'#ff4466', desc:'反彈警戒／空頭整理' },
+];
+let DATA = {}, market = 'tw', cat = 'steady', sortKey = 'score', sortAsc = false;
+
+async function load(mkt) {
+  if (DATA[mkt]) return DATA[mkt];
+  const r = await fetch(`data/trend_${mkt}.json?v=` + Date.now());
+  DATA[mkt] = await r.json();
+  return DATA[mkt];
+}
+
+function cushionColor(d) {          // 距離越近越熱
+  const a = Math.abs(d);
+  if (a <= 1)  return '#ff4466';
+  if (a <= 5)  return '#ff9944';
+  if (a <= 12) return '#f7c948';
+  return '#22d3ee';
+}
+
+function railHTML(d) {
+  const a = Math.min(Math.abs(d), 35), pct = a / 35 * 100;
+  const c = cushionColor(d);
+  return `<div class="rail" title="距反轉點 ${d.toFixed(2)}%">
+    <div class="rail-fill" style="width:${pct}%;background:linear-gradient(90deg,${c}44,${c})"></div>
+    <div class="rail-mark" style="left:${pct}%"></div></div>`;
+}
+
+const COLS = [
+  { k:'code',      t:'代號',   w:'', fmt:r=>`<span style="font-weight:700;color:var(--text-primary)">${r.code}</span>
+      <span class="hide-sm" style="color:var(--text-secondary);font-size:11px;margin-left:5px">${r.name||''}</span>
+      ${r.flipped?'<span class="badge" style="background:rgba(0,255,136,.15);color:#00ff88;margin-left:4px">NEW</span>':''}` },
+  { k:'score',     t:'Core',   fmt:r=>{
+      const c = r.score>=77?'#00ff88':r.score>=50?'#f7c948':'#8888aa';
+      return `<span class="num" style="font-weight:700;color:${c}">${r.score}</span>
+        <div style="font-size:10px;color:var(--text-secondary)">${r.label||''}</div>`; } },
+  { k:'close',     t:'現價',   fmt:r=>`<span class="num">${r.close}</span>` },
+  { k:'flip_px',   t:'反轉點', fmt:r=>`<span class="num" style="color:${cushionColor(r.dist_pct)}">${r.flip_px}</span>
+      <div style="font-size:10px;color:var(--text-secondary)">${r.dir===1?'跌破轉空':'突破轉多'}</div>` },
+  { k:'dist_pct',  t:'距離',   fmt:r=>`<div style="display:flex;align-items:center;gap:7px">
+      <span class="num" style="color:${cushionColor(r.dist_pct)};min-width:52px">${r.dist_pct>0?'+':''}${r.dist_pct.toFixed(2)}%</span>
+      ${railHTML(r.dist_pct)}</div>` },
+  { k:'kinetic',   t:'動能',   fmt:r=>`<span style="font-size:12px">${r.kin_icon||''} ${r.kinetic||''}</span>` },
+  { k:'rs',        t:'RS',     fmt:r=>{
+      const c = r.rs>=0?'#00ff88':'#ff4466';
+      return `<span class="num" style="color:${c}">${r.rs>=0?'+':''}${r.rs.toFixed(1)}%</span>`; } },
+  { k:'days',      t:'在榜',   cls:'hide-sm', fmt:r=>`<span class="num" style="color:var(--text-secondary)">${r.days}d</span>` },
+  { k:'stack',     t:'型態',   cls:'hide-sm', fmt:r=>{
+      if (!r.stack) return '<span style="color:var(--text-secondary);font-size:11px">—</span>';
+      const bull = r.stack.includes('多頭');
+      return `<span class="badge" style="background:${bull?'rgba(0,255,136,.12)':'rgba(255,68,102,.12)'};
+        color:${bull?'#00ff88':'#ff4466'}">${r.stack}</span>`; } },
+];
+
+function setMarket(m) {
+  market = m;
+  document.querySelectorAll('[data-mkt]').forEach(e =>
+    e.classList.toggle('active', e.dataset.mkt === m));
+  render();
+}
+function setCat(c) { cat = c; render(); }
+function setSort(k) {
+  if (sortKey === k) sortAsc = !sortAsc; else { sortKey = k; sortAsc = false; }
+  render();
+}
+
+async function render() {
+  const d = await load(market);
+  document.getElementById('meta').textContent =
+    `${d.date} 收盤 · 命中 ${d.count} 檔 · 更新 ${d.generated}`;
+
+  const counts = {};
+  CATS.forEach(c => counts[c.id] = d.rows.filter(r => r.cat === c.id).length);
+
+  // 摘要卡
+  document.getElementById('summary').innerHTML = CATS.map(c => `
+    <div class="info-card" style="padding:11px 13px;cursor:pointer;${cat===c.id?`border-color:${c.color}66;`:''}"
+         onclick="setCat('${c.id}')">
+      <div style="font-size:10px;color:var(--text-secondary);white-space:nowrap">${c.icon} ${c.name}</div>
+      <div class="num" style="font-size:21px;font-weight:800;color:${c.color};margin-top:2px">${counts[c.id]||0}</div>
+    </div>`).join('');
+
+  // 分類頁籤
+  document.getElementById('catTabs').innerHTML = CATS.map(c =>
+    `<div class="tab ${cat===c.id?'active':''}" onclick="setCat('${c.id}')">${c.icon} ${c.name}
+      <span class="num" style="opacity:.6">${counts[c.id]||0}</span></div>`).join('');
+
+  // 表頭
+  document.getElementById('thead').innerHTML = COLS.map(c =>
+    `<th class="${c.cls||''}" onclick="setSort('${c.k}')">${c.t}${
+      sortKey===c.k ? `<span style="opacity:.5"> ${sortAsc?'▲':'▼'}</span>` : ''}</th>`).join('');
+
+  // 資料列
+  let rows = d.rows.filter(r => r.cat === cat);
+  rows.sort((a, b) => {
+    let x = a[sortKey], y = b[sortKey];
+    if (sortKey === 'dist_pct') { x = Math.abs(x); y = Math.abs(y); }
+    if (typeof x === 'string') return sortAsc ? x.localeCompare(y) : y.localeCompare(x);
+    return sortAsc ? (x||0)-(y||0) : (y||0)-(x||0);
+  });
+
+  const meta = CATS.find(c => c.id === cat);
+  document.getElementById('tbody').innerHTML = rows.length
+    ? rows.map(r => `<tr class="row">${COLS.map(c =>
+        `<td class="${c.cls||''}">${c.fmt(r)}</td>`).join('')}</tr>`).join('')
+    : `<tr><td colspan="${COLS.length}" style="text-align:center;padding:36px;color:var(--text-secondary)">
+        ${meta.icon} ${meta.name}：目前無標的</td></tr>`;
+}
+
+render();
+</script>
+</body>
+</html>
