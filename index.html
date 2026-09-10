@@ -113,6 +113,18 @@ body {
   white-space: nowrap;
   margin-right: 3px;
 }
+.bub {
+  position:absolute; border-radius:50%; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; cursor:pointer; text-align:center;
+  transition: transform .16s ease, box-shadow .16s ease; user-select:none; overflow:hidden;
+}
+.bub:hover { transform: scale(1.09); z-index:20; box-shadow:0 0 18px rgba(0,0,0,.6); }
+.bub.sel  { box-shadow:0 0 0 2px #fff, 0 0 22px rgba(255,255,255,.35); z-index:25; }
+.bub-sym  { font-weight:800; line-height:1.05; letter-spacing:-.3px; }
+.bub-sub  { opacity:.85; line-height:1.3; }
+.bub-legend span { display:inline-flex; align-items:center; gap:4px; margin-right:12px; white-space:nowrap; }
+.bub-dot { width:9px; height:9px; border-radius:50%; display:inline-block; }
+
 .score-circle {
   width: 38px; height: 38px;
   border-radius: 50%;
@@ -180,6 +192,7 @@ td { padding: 9px 8px; }
       <div style="display:flex;gap:6px;">
         <button class="tab-btn active" id="tab1" onclick="switchTab('surface',this)">表象信號</button>
         <button class="tab-btn" id="tab2" onclick="switchTab('forward',this)">前瞻雷達</button>
+        <button class="tab-btn" id="tab3" onclick="switchTab('bubble',this)">泡泡圖</button>
       </div>
     </div>
   </div>
@@ -267,8 +280,15 @@ td { padding: 9px 8px; }
         </div>
       </div>
 
+      <!-- 泡泡圖 -->
+      <div class="info-card" id="bubbleCard" style="padding:12px;display:none;">
+        <div id="bubbleWrap" style="position:relative;width:100%;height:min(62vh,620px);overflow:hidden;"></div>
+        <div class="bub-legend" id="bubbleLegend" style="font-size:10px;color:#8888aa;padding-top:10px;border-top:1px solid #1e1e3a;margin-top:8px;line-height:2;"></div>
+        <div id="bubbleDetail" style="display:none;margin-top:10px;padding:12px;border:1px solid #1e1e3a;border-radius:10px;background:rgba(0,0,0,.35);"></div>
+      </div>
+
       <!-- 表格 -->
-      <div class="info-card" style="padding:0;overflow:hidden;">
+      <div class="info-card" id="tableCard" style="padding:0;overflow:hidden;">
         <div style="overflow-x:auto;">
           <table style="width:100%;border-collapse:collapse;min-width:720px;">
             <thead id="tableHead">
@@ -876,6 +896,8 @@ function renderTable(coins) {
     b.style.fontWeight  = on ? '700' : '400';
   }
   if (tierFilter) filtered = filtered.filter(c => classify(c).tier === tierFilter);
+
+  if (currentTab === 'bubble') setTimeout(() => renderBubbles(coins), 0);
 
   const _dc = document.getElementById('deadCount');
   if (_dc) {
@@ -1809,15 +1831,218 @@ function calcForward(coin, baseScore) {
 }
 
 // ============================================================
+// 泡泡圖
+//   氣泡大小＝雷達最終評分，顏色＝分級，虛線外框＝莊幣嫌疑
+//   佈局用碰撞鬆弛自己算（50 顆泡泡幾毫秒就收斂），不外掛任何繪圖庫
+// ============================================================
+const BUBBLE_MAX = 50;
+let bubbleSel = null;
+
+function hexA(hex, a) {
+  const h = (hex || '#888').replace('#', '');
+  const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+  const n = parseInt(full, 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+// 碰撞鬆弛：先用黃金角把泡泡撒開，再反覆把重疊的推開、輕輕拉回中心
+function packBubbles(items, W, H) {
+  const n = items.length;
+  // 大的先放（會落在中心），小的往外圈鋪；長寬比不同時要各自縮放，否則整團會偏一邊
+  const sorted = [...items].sort((a, b) => b.r - a.r);
+  const nodes = sorted.map((it, i) => {
+    const ang = i * 2.399963;
+    const t = Math.sqrt((i + 0.5) / n);
+    return Object.assign({}, it, {
+      x: W / 2 + Math.cos(ang) * t * (W / 2 - it.r) * 0.92,
+      y: H / 2 + Math.sin(ang) * t * (H / 2 - it.r) * 0.92,
+    });
+  });
+  const PAD = 3;
+  for (let iter = 0; iter < 320; iter++) {
+    // 吸引力按容器長寬比分配，寬螢幕不會把泡泡全擠到一側
+    for (const a of nodes) {
+      a.x += (W / 2 - a.x) * 0.010;
+      a.y += (H / 2 - a.y) * 0.026 * Math.min(3.2, W / H);
+    }
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const a = nodes[i], b = nodes[j];
+        let dx = b.x - a.x, dy = b.y - a.y;
+        const d = Math.hypot(dx, dy) || 0.01;
+        const min = a.r + b.r + PAD;
+        if (d < min) {
+          const k = ((min - d) / d) * 0.5;
+          dx *= k; dy *= k;
+          a.x -= dx; a.y -= dy; b.x += dx; b.y += dy;
+        }
+      }
+    }
+    for (const a of nodes) {
+      a.x = Math.max(a.r + 2, Math.min(W - a.r - 2, a.x));
+      a.y = Math.max(a.r + 2, Math.min(H - a.r - 2, a.y));
+    }
+  }
+  return nodes;
+}
+
+function bubbleCandidates(coins) {
+  let list = (coins || []).filter(c => {
+    if (isStablecoin(c)) return false;
+    const sc = calcScore(c);
+    if (sc.junk) return false;
+    if (memeMode) {
+      const mc = c.market_cap || c.fully_diluted_valuation || 0;
+      if (mc > MEME_MAX_MC) return false;
+    }
+    if (hideDead && sc.death && sc.death.dead) return false;
+    return true;
+  });
+  if (tierFilter) list = list.filter(c => classify(c).tier === tierFilter);
+  const rank = { L1: 3, L2: 2, RISK: 1 };
+  const ranked = list
+    .map(c => ({ c, ts: totalScore(c), cl: classify(c) }))
+    // 先讓有分級的進榜（L1 > L2 > 風險 > 無），同級再比分數；泡泡大小仍然只看分數
+    .sort((a, b) => ((rank[b.cl.tier] || 0) - (rank[a.cl.tier] || 0)) || (b.ts.total - a.ts.total));
+  // 個位數分數的幣佔著版面沒有意義；但整個市場都很弱時，至少留 12 顆免得畫面空掉
+  const strong = ranked.filter(x => x.ts.total >= 15);
+  return (strong.length >= 12 ? strong : ranked.slice(0, 12)).slice(0, BUBBLE_MAX);
+}
+
+function renderBubbles(coins) {
+  const wrap = document.getElementById('bubbleWrap');
+  if (!wrap) return;
+  // 先清空再量：上一輪的泡泡若溢出，會把 clientWidth 撐大，下一輪就越算越偏
+  wrap.innerHTML = '';
+  const W = Math.max(320, wrap.clientWidth  || 800);
+  const H = Math.max(280, wrap.clientHeight || 560);
+  const list = bubbleCandidates(coins);
+
+  if (!list.length) {
+    wrap.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#8888aa;font-size:13px;">目前沒有符合條件的幣</div>';
+    return;
+  }
+
+  // 泡泡大小：先算各自的相對面積權重（分數越高越大），再整體縮放到「總面積約佔容器 58%」。
+  // 固定像素半徑會讓泡泡在寬螢幕縮成中間一小團，改成自適應才會鋪滿版面。
+  const maxS = Math.max(...list.map(x => x.ts.total), 1);
+  const weights = list.map(x => 0.25 + Math.pow(Math.max(x.ts.total, 5) / maxS, 1.6));
+  const sumW = weights.reduce((a, b) => a + b, 0) || 1;
+  const targetArea = W * H * 0.62;
+  const rMax = Math.min(W, H) * 0.24;
+  const items = list.map((x, i) => Object.assign({}, x, {
+    r: Math.max(13, Math.min(rMax, Math.sqrt((targetArea * weights[i] / sumW) / Math.PI))),
+  }));
+
+  const nodes = packBubbles(items, W, H);
+  wrap.innerHTML = nodes.map((n, i) => {
+    const chg = n.c.price_change_percentage_24h_in_currency ?? n.c.price_change_percentage_24h ?? 0;
+    const col = n.cl.color === '#4a4a6a' ? '#5a6a8a' : n.cl.color;
+    const zh  = n.cl.zhuang >= 2;
+    const symSize = Math.max(9, Math.min(17, n.r * 0.40));
+    const subSize = Math.max(8, Math.min(11, n.r * 0.24));
+    const showSub = n.r >= 26;
+    return `<div class="bub${bubbleSel === n.c.id ? ' sel' : ''}" data-id="${n.c.id}" onclick="selectBubble('${n.c.id}')"
+      title="${n.c.name} · ${n.cl.label}｜評分 ${n.ts.total}｜24h ${fmtPct(chg)}${n.cl.zhuangLv ? '｜莊幣·' + n.cl.zhuangLv : ''}"
+      style="left:${(n.x - n.r).toFixed(1)}px;top:${(n.y - n.r).toFixed(1)}px;width:${(n.r * 2).toFixed(1)}px;height:${(n.r * 2).toFixed(1)}px;
+      background:radial-gradient(circle at 34% 28%, ${hexA(col, .48)}, ${hexA(col, .12)} 72%);
+      border:${zh ? '2px dashed ' + hexA('#ffaa00', .85) : '1px solid ' + hexA(col, .55)};
+      color:${col};">
+      <div class="bub-sym" style="font-size:${symSize.toFixed(1)}px;color:#f2f2ff;">${n.c.symbol.toUpperCase().slice(0, 7)}</div>
+      ${showSub ? `<div class="bub-sub" style="font-size:${subSize.toFixed(1)}px;color:${col};">${n.ts.total}</div>
+      <div class="bub-sub" style="font-size:${(subSize - 0.5).toFixed(1)}px;color:${chg >= 0 ? '#00ff88' : '#ff4466'};">${fmtPct(chg)}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  const lg = document.getElementById('bubbleLegend');
+  if (lg) {
+    const keys = ['burst', 'ignite', 'accel', 'preBreak', 'quiet', 'early', 'risk', 'none'];
+    lg.innerHTML =
+      keys.map(k => `<span><i class="bub-dot" style="background:${hexA(TIER_DEFS[k].color, .75)};"></i>${TIER_DEFS[k].label}</span>`).join('') +
+      `<span><i class="bub-dot" style="background:transparent;border:2px dashed #ffaa00;"></i>莊幣嫌疑（中／高）</span>` +
+      `<br><span style="color:#6666aa;">泡泡大小＝雷達評分（前 ${BUBBLE_MAX} 名）· 點一下看細節 · 上方 L1/L2/風險 與板塊篩選同樣生效</span>`;
+  }
+  if (bubbleSel) renderBubbleDetail(bubbleSel);
+}
+
+function selectBubble(id) {
+  bubbleSel = (bubbleSel === id) ? null : id;
+  document.querySelectorAll('.bub').forEach(el => el.classList.toggle('sel', el.dataset.id === bubbleSel));
+  renderBubbleDetail(bubbleSel);
+}
+
+function renderBubbleDetail(id) {
+  const box = document.getElementById('bubbleDetail');
+  if (!box) return;
+  const coin = (window.__coins || []).find(c => c.id === id);
+  if (!id || !coin) { box.style.display = 'none'; return; }
+  const ts = totalScore(coin), cl = classify(coin), d = ts.dv, s = ts.s;
+  const chg = coin.price_change_percentage_24h_in_currency ?? coin.price_change_percentage_24h ?? 0;
+  const row = (k, v, c) => `<div style="display:flex;justify-content:space-between;gap:10px;">
+      <span style="color:#6666aa;">${k}</span><span style="color:${c || '#e8e8ff'};font-weight:600;">${v}</span></div>`;
+  const na = '<span style="color:#4a4a6a;">—</span>';
+  box.style.display = 'block';
+  box.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <img src="${coin.image || ''}" style="width:28px;height:28px;border-radius:50%;" onerror="this.style.display='none'">
+      <div style="flex:1;">
+        <div style="font-weight:800;font-size:14px;">${coin.symbol.toUpperCase()} <span style="color:#8888aa;font-weight:400;font-size:11px;">${coin.name}</span></div>
+        <div style="font-size:10px;color:#6666aa;">${cl.desc}</div>
+      </div>
+      <span class="badge" style="background:${cl.bg};color:${cl.color};font-weight:700;">${cl.label}</span>
+      <span class="score-circle" style="background:${scoreStyle(ts.total).bg};color:${scoreStyle(ts.total).color};border:${scoreStyle(ts.total).border};">${ts.total}</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 18px;font-size:11px;">
+      ${row('價格', fmtPrice(coin.current_price))}
+      ${row('24h', fmtPct(chg), chg >= 0 ? '#00ff88' : '#ff4466')}
+      ${row('市值', coin.market_cap ? fmtMC(coin.market_cap) : (coin.fully_diluted_valuation ? fmtMC(coin.fully_diluted_valuation) + '*' : '—'))}
+      ${row('量/市值', s.volRatio.toFixed(2) + 'x')}
+      ${row('日內振幅', (s.amplitude * 100).toFixed(1) + '%')}
+      ${row('7日位置', s.pos7 == null ? na : Math.round(s.pos7 * 100) + '%', s.pos7 != null && s.pos7 <= .35 ? '#00ff88' : s.pos7 != null && s.pos7 >= .85 ? '#ff6622' : '#e8e8ff')}
+      ${row('OI 1h / 4h / 24h', d && d.oi4h != null ? `${(d.oi1h ?? 0).toFixed(1)}% / ${d.oi4h.toFixed(1)}% / ${(d.oi24h ?? 0).toFixed(1)}%` : na)}
+      ${row('OI 名目金額', d && d.oiUsd ? fmtK(d.oiUsd) : na)}
+      ${row('資金費率 8h', d && d.fr != null ? (d.fr * 100).toFixed(3) + '%' : na, d && d.fr < 0 ? '#ff4466' : '#e8e8ff')}
+      ${row('1h / 4h 漲幅', d && d.c1h != null ? `${d.c1h.toFixed(1)}% / ${(d.c4h ?? 0).toFixed(1)}%` : na)}
+      ${row('量倍數 1h / 4h', d && d.v1h ? `${d.v1h.toFixed(1)}x / ${(d.v4h ?? 0).toFixed(1)}x` : na)}
+      ${row('散戶多空', d && d.longPct != null ? `${d.longPct.toFixed(0)} / ${(100 - d.longPct).toFixed(0)}` : na)}
+      ${row('盤口 ±1%', d && d.depthUsd != null ? fmtK(d.depthUsd) : na)}
+      ${row('買 / 賣 掛單', d && d.depthImb != null ? `${Math.round(d.depthImb * 100)} / ${Math.round((1 - d.depthImb) * 100)}` : na, d && d.depthImb != null && d.depthImb <= .35 ? '#ff4466' : d && d.depthImb >= .65 ? '#00ff88' : '#e8e8ff')}
+      ${row('盤口 / 市值', d && d.depthRatio != null ? (d.depthRatio * 100).toFixed(3) + '%' : na, d && d.depthRatio != null && d.depthRatio < .0015 ? '#ffaa00' : '#e8e8ff')}
+      ${row('買賣價差', d && d.spread != null ? d.spread.toFixed(3) + '%' : na)}
+      ${row('Taker 主動買', d && d.taker != null ? (d.taker * 100).toFixed(1) + '%' : na, d && d.taker != null && d.taker < .42 ? '#ff4466' : '#e8e8ff')}
+      ${row('莊幣指數', cl.zhuangLv ? `${cl.zhuang}/4 · ${cl.zhuangLv}` : '0/4', cl.zhuang >= 3 ? '#ff2244' : cl.zhuang === 2 ? '#ffaa00' : '#8888aa')}
+    </div>
+    ${cl.zhuangFlags.length ? `<div style="margin-top:8px;font-size:10px;color:#ffaa00;">莊幣特徵：${cl.zhuangFlags.join('、')}</div>` : ''}
+    ${cl.dumping || cl.fading ? `<div style="margin-top:4px;font-size:10px;color:#ff4466;">${cl.dumping ? '💸 疑似出貨　' : ''}${cl.fading ? '📉 高點回落' : ''}</div>` : ''}
+    ${d ? '' : '<div style="margin-top:8px;font-size:10px;color:#6666aa;">幣安沒有這檔的 USDT 永續，合約欄位無資料。</div>'}`;
+}
+
+let _bubResizeT = null;
+window.addEventListener('resize', () => {
+  if (currentTab !== 'bubble') return;
+  clearTimeout(_bubResizeT);
+  _bubResizeT = setTimeout(() => renderBubbles(window.__coins || []), 220);
+});
+
+// ============================================================
 // Tab 切換
 // ============================================================
 function switchTab(tab, btn) {
   currentTab = tab;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  updateTableHeader();
+  const isBub = tab === 'bubble';
+  const tc = document.getElementById('tableCard');
+  const bc = document.getElementById('bubbleCard');
+  if (tc) tc.style.display = isBub ? 'none' : '';
+  if (bc) bc.style.display = isBub ? '' : 'none';
   updateFormulaCard();
-  renderTable(allCoins);
+  if (isBub) {
+    setTimeout(() => renderBubbles(allCoins), 0);
+  } else {
+    updateTableHeader();
+    renderTable(allCoins);
+  }
 }
 
 function updateTableHeader() {
