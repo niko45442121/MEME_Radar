@@ -193,6 +193,7 @@ td { padding: 9px 8px; }
         <button class="tab-btn active" id="tab1" onclick="switchTab('surface',this)">表象信號</button>
         <button class="tab-btn" id="tab2" onclick="switchTab('forward',this)">前瞻雷達</button>
         <button class="tab-btn" id="tab3" onclick="switchTab('bubble',this)">泡泡圖</button>
+        <button class="tab-btn" id="tab4" onclick="switchTab('track',this)">訊號追蹤</button>
       </div>
     </div>
   </div>
@@ -256,6 +257,10 @@ td { padding: 9px 8px; }
             <button class="cat-pill" onclick="setCategory('depin',this)">DePIN</button>
           </div>
           <div style="margin-left:12px;font-size:11px;color:#8888aa;white-space:nowrap;flex-shrink:0;display:flex;align-items:center;gap:10px;">
+            <button id="dirToggle" onclick="toggleDirection(this)" title="切換雷達方向：做多找要漲的，做空找要崩的（評分與分級整套換一套口徑）"
+              style="padding:3px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700;
+              background:rgba(0,255,136,.14);border:1px solid rgba(0,255,136,.4);color:#00ff88;">
+              📈 做多</button>
             <span style="display:flex;gap:4px;">
               <button id="tierL1" onclick="toggleTier('L1',this)" title="正在動：妖幣爆發／啟動／加速中"
                 style="padding:3px 8px;border-radius:6px;font-size:11px;cursor:pointer;background:rgba(255,34,68,.10);border:1px solid rgba(255,34,68,.30);color:#ff4466;">L1</button>
@@ -287,6 +292,11 @@ td { padding: 9px 8px; }
         <div id="bubbleDetail" style="display:none;margin-top:10px;padding:12px;border:1px solid #1e1e3a;border-radius:10px;background:rgba(0,0,0,.35);"></div>
       </div>
 
+      <!-- 訊號追蹤 -->
+      <div class="info-card" id="trackCard" style="padding:14px;display:none;">
+        <div id="trackBody"></div>
+      </div>
+
       <!-- 表格 -->
       <div class="info-card" id="tableCard" style="padding:0;overflow:hidden;">
         <div style="overflow-x:auto;">
@@ -296,6 +306,7 @@ td { padding: 9px 8px; }
                 <th onclick="sortBy('score')" style="width:58px;text-align:center;">評分 <span class="sort-arr active" id="sa-score">↓</span></th>
                 <th>代幣</th>
                 <th onclick="sortBy('tier')" style="text-align:center;min-width:96px;" title="L1＝正在動；L2＝條件成形但還沒動；風險＝資金在撤或已過熱">分級 <span class="sort-arr" id="sa-tier">↕</span></th>
+                <th onclick="sortBy('track')" style="text-align:center;" title="從這檔幣第一次進入 L1/L2 那一刻算起的報酬，以及已經掛了多久、觸發過幾次">首警後 <span class="sort-arr" id="sa-track">↕</span></th>
                 <th onclick="sortBy('price')" style="text-align:right;">價格 <span class="sort-arr" id="sa-price">↕</span></th>
                 <th onclick="sortBy('change')" style="text-align:right;">24h <span class="sort-arr" id="sa-change">↕</span></th>
                 <th onclick="sortBy('marketcap')" style="text-align:right;">市值 <span class="sort-arr" id="sa-marketcap">↕</span></th>
@@ -303,6 +314,7 @@ td { padding: 9px 8px; }
                 <th onclick="sortBy('oi')" style="text-align:right;color:#00ff88;" title="4 小時未平倉合約變化：新資金進場才是真拉盤">OI 4h <span class="sort-arr" id="sa-oi">↕</span></th>
                 <th style="text-align:right;color:#ff6622;" title="8 小時資金費率：負值＝空方付錢給多方，逼空燃料">費率</th>
                 <th onclick="sortBy('ls')" style="text-align:center;color:#aa88ff;" title="散戶帳戶多空比（多/空）。一面倒做多通常是反指">多空 <span class="sort-arr" id="sa-ls">↕</span></th>
+                <th onclick="sortBy('cvd')" style="text-align:center;color:#ffcc66;" title="主動買賣淨額佔總成交比例；背離＝價格與真實買賣力道不同步">CVD <span class="sort-arr" id="sa-cvd">↕</span></th>
                 <th onclick="sortBy('depth')" style="text-align:right;color:#66ccff;" title="盤口 ±1% 掛單總額 / 買賣佔比。越薄越容易被拉動">深度 <span class="sort-arr" id="sa-depth">↕</span></th>
                 <th onclick="sortBy('amplitude')" style="text-align:right;">振幅 <span class="sort-arr" id="sa-amplitude">↕</span></th>
                 <th style="text-align:right;">高低區間</th>
@@ -388,7 +400,8 @@ let allCoins = [];
 let currentCategory = 'all';
 let hideDead = true;          // 預設隱藏崩盤幣（拉高出貨殘骸／連續崩跌）
 let memeMode = true;
-let tierFilter = null;        // null=全部，或 'L1' / 'L2' / 'RISK'          // 妖幣模式：只留市值 < MEME_MAX_MC，濾掉主流大幣
+let tierFilter = null;        // null=全部，或 'L1' / 'L2' / 'RISK'
+let direction = 'long';       // 'long' 找要漲的，'short' 找要崩的          // 妖幣模式：只留市值 < MEME_MAX_MC，濾掉主流大幣
 let currentTab = 'surface';
 let sortField = 'score';
 let sortDir = 1; // 1 = 高→低(降序), -1 = 低→高(升序)
@@ -619,6 +632,125 @@ function calcScore(coin) {
 }
 
 // ============================================================
+// 做空版現貨評分
+//   不是把做多分數倒過來就好：流動性、薄盤、振幅這些是中性的（兩個方向都需要），
+//   但「漲幅窗口」「上行空間」「動能」「7 日位置」必須整個換一套口徑。
+// ============================================================
+const _shortCache = new WeakMap();
+
+function calcScoreShort(coin) {
+  const hit = _shortCache.get(coin);
+  if (hit) return hit;
+
+  const change = coin.price_change_percentage_24h_in_currency ?? coin.price_change_percentage_24h ?? 0;
+  const c7     = coin.price_change_percentage_7d_in_currency ?? null;
+  const c30    = coin.price_change_percentage_30d_in_currency ?? null;
+  const mcRaw  = coin.market_cap || 0;
+  const fdv    = coin.fully_diluted_valuation || 0;
+  const mc     = mcRaw || fdv;
+  const vol    = coin.total_volume || 0;
+  const high   = coin.high_24h || coin.current_price || 0;
+  const low    = coin.low_24h  || coin.current_price || 0;
+  const ath    = coin.ath || coin.current_price || 0;
+  const atl    = coin.atl || 0;
+  const price  = coin.current_price || 0;
+
+  const volRatio  = mc > 0 ? vol / mc : 0;
+  const amplitude = low > 0 ? (high - low) / low : 0;
+  const fdvRatio  = (fdv > 0 && mcRaw > 0) ? fdv / mcRaw : 1;
+  const junk      = junkCheck(coin);
+
+  // 1. 量能 (0–25)：要有量才空得掉；放量下跌對做空是順風
+  let volScore;
+  if      (volRatio >= 5)   volScore = Math.max(10, 25 - (volRatio - 5) * 2);
+  else if (volRatio >= 1.0) volScore = 25;
+  else if (volRatio >= 0.5) volScore = 18 + ((volRatio - 0.5) / 0.5) * 7;
+  else                      volScore = (volRatio / 0.5) * 18;
+  if (change > 0) volScore *= 0.7;          // 還在漲的放量，對做空不算助力
+  if (vol < 1e6)  volScore *= 0.6;
+
+  // 2. 振幅 (0–15)：中性，兩個方向都要會動才有肉
+  let ampScore;
+  if      (amplitude >= 0.5) ampScore = 15;
+  else if (amplitude >= 0.3) ampScore = 10.5 + ((amplitude - 0.3) / 0.2) * 4.5;
+  else if (amplitude >= 0.1) ampScore = ((amplitude - 0.1) / 0.2) * 10.5;
+  else                       ampScore = 0;
+
+  // 3. 薄盤加權 (0–18)：小市值好拉也好砸
+  let mcScore;
+  if      (mc < 10e6)  mcScore = 18;
+  else if (mc < 50e6)  mcScore = 16;
+  else if (mc < 100e6) mcScore = 12.5;
+  else if (mc < 300e6) mcScore = 8;
+  else if (mc < 500e6) mcScore = 4.5;
+  else if (mc < 1e9)   mcScore = 2;
+  else                 mcScore = 0;
+  if (fdvRatio > 5) mcScore *= 1.15;        // 解鎖壓力對做空反而是燃料
+
+  // 4. 做空窗口 (0–18)：最好是剛開始轉弱，不是已經崩到底
+  let dumpScore;
+  if      (change <= -5 && change >= -25) dumpScore = 18;   // 正在跌，順勢
+  else if (change < -25)                  dumpScore = 5;    // 跌過頭，隨時反彈
+  else if (change > -5 && change <= 5)    dumpScore = 12;   // 高檔盤整，隨時破
+  else if (change > 5 && change <= 30)    dumpScore = 7;    // 還在漲，得等轉折
+  else                                    dumpScore = 2;    // 噴太兇，逆勢空很危險
+
+  // 5. 下跌空間 (0–8)：離歷史低點越遠，往下的空間越大
+  let downScore;
+  const roomDown = (atl > 0 && price > 0) ? (price - atl) / price : 1;
+  if      (roomDown >= 0.9) downScore = 8;
+  else if (roomDown >= 0.7) downScore = 6;
+  else if (roomDown >= 0.5) downScore = 4;
+  else if (roomDown >= 0.3) downScore = 2;
+  else                      downScore = 0;                  // 已經貼著歷史低點，沒什麼好空的
+
+  // 6. 中期動能 (−12 ~ +10)：7 日已轉弱是順勢；7 日還在噴是逆勢
+  let momScore = 0;
+  if (c7 !== null) {
+    if      (c7 <= -30) momScore = 4;       // 跌很久了，追空效益遞減
+    else if (c7 <= -10) momScore = 10;
+    else if (c7 <= 0)   momScore = 7;
+    else if (c7 <= 20)  momScore = 0;
+    else if (c7 <= 60)  momScore = -6;
+    else                momScore = -12;
+  }
+  if (c30 !== null && c30 > 150) momScore -= 4;   // 一個月翻好幾倍的，空它要很小心
+
+  // 7. 七日結構位置 (−8 ~ +12)：站在高位才有摔下來的高度
+  let structScore = 0, pos7 = null;
+  const sp = coin.sparkline_in_7d?.price;
+  if (sp && sp.length >= 24) {
+    let mn = Infinity, mx = -Infinity;
+    for (const v of sp) { if (v > 0) { if (v < mn) mn = v; if (v > mx) mx = v; } }
+    const rng = mx - mn;
+    if (isFinite(mn) && rng > 0) {
+      pos7 = Math.max(0, Math.min(1, (price - mn) / rng));
+      if (change < 0) {
+        if      (pos7 >= 0.75) structScore = 12;   // 高位剛轉頭，最好的位置
+        else if (pos7 >= 0.5)  structScore = 8;
+        else if (pos7 >= 0.25) structScore = 3;
+        else                   structScore = -8;   // 已經在低位還追空
+      } else {
+        structScore = pos7 >= 0.9 ? 6 : -3;        // 高位還在漲＝可能的頂部，低位在漲別空
+      }
+    }
+  }
+
+  let total = Math.round(volScore + ampScore + mcScore + dumpScore + downScore + momScore + structScore);
+  if (junk) total = 0;
+  total = Math.max(0, Math.min(100, total));
+
+  const result = {
+    total, volScore, ampScore, mcScore, pumpScore: dumpScore, upScore: downScore, momScore, structScore,
+    volRatio, amplitude, athDist: ath > 0 ? (ath - price) / ath : 0, fdvRatio, pos7, roomDown, c7, c30,
+    death: { dead: false, why: '' },   // 做空不套用「崩盤幣」封頂，那反而是做空的標的
+    junk,
+  };
+  _shortCache.set(coin, result);
+  return result;
+}
+
+// ============================================================
 // 合約評分：−19 ~ +30 的修正項，加在現貨分上
 //   沒上合約的幣不加不減（維持現貨分），免得把還沒上合約的小幣誤殺
 // ============================================================
@@ -697,8 +829,27 @@ function calcDeriv(coin) {
     else if (d.lsRatio <= 0.8)   lsScore = 2;
   }
 
-  const bonus = Math.round(oiScore + frScore + vScore + mScore + rScore + dScore + lsScore);
-  return { ...d, oiScore, frScore, vScore, mScore, rScore, dScore, lsScore, bonus, oiPriceRatio, depthRatio, tags };
+  // 8. CVD (−10 ~ +8)：這波漲是真有人買，還是只有掛單在拉
+  let cvdScore = 0;
+  if (d.cvdRatio != null) {
+    if      (d.cvdDiv === 'bear')            { cvdScore = -10; T('誘多·CVD背離', '#ff2244', 'rgba(255,34,68,.22)'); }
+    else if (d.cvdDiv === 'bull')            { cvdScore = 6;   T('賣壓衰竭', '#00ff88', 'rgba(0,255,136,.16)'); }
+    else if (d.cvdRatio >= 0.08 && c24 > 0)  { cvdScore = 8;   T('真買盤', '#00ff88', 'rgba(0,255,136,.18)'); }
+    else if (d.cvdRatio >= 0.03)               cvdScore = 4;
+    else if (d.cvdRatio <= -0.08 && c24 > 0) { cvdScore = -6;  T('漲勢無承接', '#ff6622', 'rgba(255,102,34,.16)'); }
+    else if (d.cvdRatio <= -0.03)              cvdScore = -3;
+  }
+
+  // 9. 短時框 (−4 ~ +8)：15 分鐘級別的啟動，比 1h 早一步
+  let stScore = 0;
+  if (d.c15m != null && d.v5m != null) {
+    if      (d.c15m >= 3   && d.v5m >= 3) { stScore = 8;  T('15m啟動', '#00ff88', 'rgba(0,255,136,.18)'); }
+    else if (d.c15m >= 1.5 && d.v5m >= 2)   stScore = 5;
+    else if (d.c15m <= -3  && d.v5m >= 2) { stScore = -4; T('15m急殺', '#ff4466', 'rgba(255,68,102,.16)'); }
+  }
+
+  const bonus = Math.round(oiScore + frScore + vScore + mScore + rScore + dScore + lsScore + cvdScore + stScore);
+  return { ...d, oiScore, frScore, vScore, mScore, rScore, dScore, lsScore, cvdScore, stScore, bonus, oiPriceRatio, depthRatio, tags };
 }
 
 // ============================================================
@@ -756,7 +907,8 @@ function classify(coin) {
     const fr   = (d.fr   ?? 0) * 100;
     const oiPr = (Math.abs(c24) > 0.5 && d.oi24h != null) ? d.oi24h / Math.abs(c24) : null;
 
-    if      (oi4 <= -15 || fr >= 0.10 || dumping || (oiPr !== null && oiPr > 8 && oi24 > 30)) key = 'risk';
+    if      (oi4 <= -15 || fr >= 0.10 || dumping || (oiPr !== null && oiPr > 8 && oi24 > 30)
+             || (d.cvdDiv === 'bear' && c24 > 10))                                             key = 'risk';
     else if ((c24 >= 30 && oi24 >= 50) || (c24 >= 20 && fr <= -0.05))                          key = 'burst';
     else if (c1 >= 5 && v1 >= 3 && oi1 > -2)                                                   key = 'accel';
     else if (oi4 >= 20 && c24 >= 5 && c24 <= 60 && v1 >= 1.2)                                  key = 'ignite';
@@ -773,15 +925,163 @@ function classify(coin) {
   return { key, ...TIER_DEFS[key], zhuang, zhuangLv, zhuangFlags: flags, dumping, fading, hasDeriv: !!d };
 }
 
+// ============================================================
+// 做空版合約評分（−22 ~ +34）
+//   做多看的是「誰在進場拉」，做空看的是「多頭有多擁擠、有沒有人在出貨」
+// ============================================================
+function calcDerivShort(coin) {
+  const d = derivData.get(coin.id);
+  if (!d) return null;
+  const c24 = coin.price_change_percentage_24h_in_currency ?? coin.price_change_percentage_24h ?? 0;
+  const tags = [];
+  const T = (label, color, bg) => tags.push({ label, color, bg });
+
+  // 1. OI 動能 (−6 ~ +12)：OI 增而價跌＝空單進場；OI 崩而價跌＝多單被清完了，追空效益低
+  let oiScore = 0;
+  const oi4 = d.oi4h ?? 0, oi24 = d.oi24h ?? 0, oi1 = d.oi1h ?? 0;
+  if (d.oi4h != null) {
+    if      (oi4 >= 15 && c24 < 0)  { oiScore = 12; T('空單進場', '#ff4466', 'rgba(255,68,102,.20)'); }
+    else if (oi4 >= 5  && c24 < 0)    oiScore = 8;
+    else if (oi4 <= -20)            { oiScore = -6; T('多單已清', '#8888aa', 'rgba(136,136,170,.14)'); }
+    else if (oi4 >= 20 && c24 > 0)    oiScore = 5;   // 高位堆槓桿，等著被清
+  }
+
+  // 2. 資金費率 (−10 ~ +12)：正費率＝多頭擁擠，是做空的燃料；極負＝空頭擁擠，小心被逼空
+  let frScore = 0;
+  if (d.fr != null) {
+    const fr = d.fr * 100;
+    if      (fr >= 0.10) { frScore = 12; T('多頭過熱', '#ff2244', 'rgba(255,34,68,.22)'); }
+    else if (fr >= 0.05) { frScore = 8;  T('多頭擁擠', '#ff6622', 'rgba(255,102,34,.16)'); }
+    else if (fr >= 0.01)   frScore = 3;
+    else if (fr <= -0.05){ frScore = -10; T('空頭擁擠', '#ffaa00', 'rgba(255,170,0,.18)'); }
+    else if (fr < 0)       frScore = -4;
+  }
+
+  // 3. 量能 (0 ~ +10)
+  let vScore = 0;
+  if (d.v1h) {
+    if      (d.v1h >= 5) { vScore = 10; T(`量${d.v1h.toFixed(0)}x`, '#f7c948', 'rgba(247,201,72,.18)'); }
+    else if (d.v1h >= 3)   vScore = 7;
+    else if (d.v1h >= 2)   vScore = 4;
+  }
+
+  // 4. 短線動能 (−5 ~ +8)
+  let mScore = 0;
+  if (d.c1h != null) {
+    if      (d.c1h <= -3 && d.c1h >= -15) { mScore = 8; T('1h轉弱', '#ff4466', 'rgba(255,68,102,.16)'); }
+    else if (d.c1h < -15)                   mScore = 3;
+    else if (d.c1h <= -0.5)                 mScore = 4;
+    else if (d.c1h >= 5)                  { mScore = -5; T('1h反彈', '#00ff88', 'rgba(0,255,136,.12)'); }
+    else if (d.c1h > 0)                     mScore = -2;
+  }
+
+  // 5. 盤口 (−5 ~ +8)：賣壓重＝上面壓著賣單；盤口薄＝砸下去滑得快
+  let dScore = 0;
+  const _mcB = coin.market_cap || coin.fully_diluted_valuation || 0;
+  const depthRatio = (d.depthUsd != null && _mcB > 0) ? d.depthUsd / _mcB : null;
+  if (d.depthUsd != null) {
+    if      (d.depthImb <= 0.35) { dScore += 8; T('賣壓重', '#ff4466', 'rgba(255,68,102,.18)'); }
+    else if (d.depthImb >= 0.65)   dScore -= 5;
+    if ((depthRatio !== null && depthRatio < 0.0015) || d.depthUsd < 30000) {
+      dScore += 3; T('盤口極薄', '#ffaa00', 'rgba(255,170,0,.18)');
+    }
+  }
+
+  // 6. 多空比 (−4 ~ +6)：散戶一面倒做多是經典反指
+  let lsScore = 0;
+  if (d.lsRatio) {
+    if      (d.lsRatio >= 3.0) { lsScore = 6;  T('散戶一面倒多', '#ff2244', 'rgba(255,34,68,.20)'); }
+    else if (d.lsRatio >= 2.2)   lsScore = 3;
+    else if (d.lsRatio <= 0.5) { lsScore = -4; T('散戶已全空', '#8888aa', 'rgba(136,136,170,.14)'); }
+  }
+
+  // 7. CVD (−6 ~ +12)：價撐著但主動買在消失＝有人在派發
+  let cvdScore = 0;
+  if (d.cvdRatio != null) {
+    if      (d.cvdDiv === 'bear')             { cvdScore = 12; T('派發·CVD背離', '#ff2244', 'rgba(255,34,68,.22)'); }
+    else if (d.cvdDiv === 'bull')             { cvdScore = -6; T('賣壓衰竭', '#00ff88', 'rgba(0,255,136,.14)'); }
+    else if (d.cvdRatio <= -0.08)             { cvdScore = 8;  T('主動賣壓', '#ff4466', 'rgba(255,68,102,.16)'); }
+    else if (d.cvdRatio <= -0.03)               cvdScore = 4;
+    else if (d.cvdRatio >= 0.08 && c24 < 0)     cvdScore = -4;
+  }
+
+  // 8. 短時框 (−4 ~ +8)
+  let stScore = 0;
+  if (d.c15m != null && d.v5m != null) {
+    if      (d.c15m <= -3   && d.v5m >= 3) { stScore = 8;  T('15m急殺', '#ff2244', 'rgba(255,34,68,.20)'); }
+    else if (d.c15m <= -1.5 && d.v5m >= 2)   stScore = 5;
+    else if (d.c15m >= 3    && d.v5m >= 2) { stScore = -4; T('15m反彈', '#00ff88', 'rgba(0,255,136,.12)'); }
+  }
+
+  const bonus = Math.round(oiScore + frScore + vScore + mScore + dScore + lsScore + cvdScore + stScore);
+  return { ...d, oiScore, frScore, vScore, mScore, dScore, lsScore, cvdScore, stScore, bonus, depthRatio, tags };
+}
+
+// ============================================================
+// 做空分級
+// ============================================================
+const TIER_DEFS_SHORT = {
+  crash:    { tier: 'L1',   label: '🔻 崩跌中',   color: '#ff2244', bg: 'rgba(255,34,68,.20)',  desc: '正在跌，OI 同步增加＝空單還在進場' },
+  distrib:  { tier: 'L1',   label: '💀 出貨中',   color: '#ff4466', bg: 'rgba(255,68,102,.20)', desc: '價格撐在高位但主動買在消失，有人在派發' },
+  dump:     { tier: 'L1',   label: '⚡ 急殺',     color: '#ff6622', bg: 'rgba(255,102,34,.20)', desc: '15 分鐘級別放量急跌' },
+  topping:  { tier: 'L2',   label: '🕳 頂部派發', color: '#f7c948', bg: 'rgba(247,201,72,.16)', desc: '高位、CVD 轉負，還沒正式破位' },
+  crowded:  { tier: 'L2',   label: '🧨 多頭擁擠', color: '#ffaa00', bg: 'rgba(255,170,0,.16)',  desc: '費率過熱或散戶一面倒做多，踩踏燃料充足' },
+  weaken:   { tier: 'L2',   label: '📉 轉弱',     color: '#aa88ff', bg: 'rgba(170,136,255,.16)',desc: '短線結構開始走弱' },
+  srisk:    { tier: 'RISK', label: '⚠️ 逼空風險', color: '#00ff88', bg: 'rgba(0,255,136,.14)',  desc: '空頭已擁擠／賣壓衰竭／貼著歷史低點，追空容易被軋' },
+  none:     { tier: '—',    label: '—',          color: '#4a4a6a', bg: 'transparent',           desc: '條件都沒達到' },
+};
+
+function classifyShort(coin) {
+  const s   = calcScoreShort(coin);
+  const d   = derivData.get(coin.id);
+  const c24 = coin.price_change_percentage_24h_in_currency ?? coin.price_change_percentage_24h ?? 0;
+
+  // 莊幣判定與做多共用（籌碼集中是幣種屬性，跟你做哪個方向無關）
+  const base = classify(coin);
+
+  let key = 'none';
+  if (d) {
+    const oi4 = d.oi4h ?? 0, oi24 = d.oi24h ?? 0;
+    const c1  = d.c1h  ?? 0;
+    const v1  = d.v1h  ?? 0, v5 = d.v5m ?? 0;
+    const fr  = (d.fr ?? 0) * 100;
+    const imb = d.depthImb;
+
+    if      (fr <= -0.05 || d.cvdDiv === 'bull' || s.roomDown < 0.25 || c24 <= -40) key = 'srisk';
+    else if ((d.c15m ?? 0) <= -3 && v5 >= 3)                                       key = 'dump';
+    else if (c24 <= -3 && oi4 >= 10)                                               key = 'crash';
+    else if (d.cvdDiv === 'bear' && s.pos7 != null && s.pos7 >= 0.6)               key = 'distrib';
+    else if (s.pos7 != null && s.pos7 >= 0.7 && (d.cvdRatio ?? 0) < -0.02)         key = 'topping';
+    else if (fr >= 0.05 || (d.lsRatio ?? 0) >= 2.8)                                key = 'crowded';
+    else if (c1 <= -2 && (imb == null || imb <= 0.45))                             key = 'weaken';
+  } else {
+    if      (s.roomDown < 0.25 || c24 <= -40)                      key = 'srisk';
+    else if (c24 <= -5 && s.pos7 != null && s.pos7 >= 0.4)         key = 'crash';
+    else if (s.pos7 != null && s.pos7 >= 0.8 && c24 <= 2)          key = 'topping';
+    else if (c24 <= -2 && s.volRatio >= 0.6)                       key = 'weaken';
+  }
+
+  return {
+    key, ...TIER_DEFS_SHORT[key],
+    zhuang: base.zhuang, zhuangLv: base.zhuangLv, zhuangFlags: base.zhuangFlags,
+    dumping: base.dumping, fading: base.fading, hasDeriv: !!d,
+  };
+}
+
+// ---- 方向入口：做多／做空共用同一套渲染，只換掉評分與分級的來源 ----
+function spotOf(coin)  { return direction === 'short' ? calcScoreShort(coin) : calcScore(coin); }
+function derivOf(coin) { return direction === 'short' ? calcDerivShort(coin) : calcDeriv(coin); }
+function tierOf(coin)  { return direction === 'short' ? classifyShort(coin)  : classify(coin); }
+
 // 現貨分 + 合約修正 = 最終分
 //   直接相加會讓好幾檔同時撞到 100，鑑別度反而不見了，所以：
 //   有合約資料 → 現貨分打七折後加合約修正（訊號夠強才追得回滿分）
 //   沒有合約   → 現貨分打 85 折，不因為缺資料被過度懲罰，但也不給到滿分
 function totalScore(coin) {
-  const s  = calcScore(coin);
-  const dv = calcDeriv(coin);
+  const s  = spotOf(coin);
+  const dv = derivOf(coin);
   if (s.junk) return { s, dv, total: 0 };
-  const t = dv ? s.total * 0.62 + dv.bonus : s.total * 0.85;
+  const t = dv ? s.total * 0.55 + dv.bonus : s.total * 0.85;
   return { s, dv, total: Math.max(0, Math.min(100, Math.round(t))) };
 }
 
@@ -870,9 +1170,9 @@ function renderTable(coins) {
       const mc = c.market_cap || c.fully_diluted_valuation || 0;
       if (mc > MEME_MAX_MC) { bigCount++; return false; }
     }
-    if (s.death && s.death.dead) {
+    if (s.death && s.death.dead && direction === 'long') {
       deadCount++;
-      if (hideDead) return false;          // 預設隱藏崩盤幣（右上開關可切換）
+      if (hideDead) return false;          // 預設隱藏崩盤幣；做空模式下它們反而是標的，不濾
     }
     if (!memeMode && currentCategory === 'all') {
       if (s.total < MIN_SCORE_LARGE_CAP && (c.market_cap || 0) > 2e9) return false;
@@ -882,7 +1182,7 @@ function renderTable(coins) {
   // 分級統計要在套用分級篩選「之前」算，否則按上去數字會自己縮水
   const tierCount = { L1: 0, L2: 0, RISK: 0 };
   for (const c of filtered) {
-    const t = classify(c).tier;
+    const t = tierOf(c).tier;
     if (tierCount[t] !== undefined) tierCount[t]++;
   }
   for (const [k, on] of [['L1', tierFilter === 'L1'], ['L2', tierFilter === 'L2'], ['RISK', tierFilter === 'RISK']]) {
@@ -895,9 +1195,12 @@ function renderTable(coins) {
     b.style.borderColor = on ? `rgba(${col},.75)` : (k === 'RISK' ? '#1e1e3a' : `rgba(${col},.30)`);
     b.style.fontWeight  = on ? '700' : '400';
   }
-  if (tierFilter) filtered = filtered.filter(c => classify(c).tier === tierFilter);
+  trackUpdate(filtered);
+
+  if (tierFilter) filtered = filtered.filter(c => tierOf(c).tier === tierFilter);
 
   if (currentTab === 'bubble') setTimeout(() => renderBubbles(coins), 0);
+  if (currentTab === 'track')  setTimeout(renderTrack, 0);
 
   const _dc = document.getElementById('deadCount');
   if (_dc) {
@@ -920,16 +1223,22 @@ function renderTable(coins) {
     else if (sortField === 'ratio')     { av = as.volRatio;  bv = bs.volRatio; }
     else if (sortField === 'amplitude') { av = as.amplitude; bv = bs.amplitude; }
     else if (sortField === 'tier')      { const rank = { L1: 3, L2: 2, RISK: 1 };
-                                          const ac = classify(a), bc = classify(b);
+                                          const ac = tierOf(a), bc = tierOf(b);
                                           av = (rank[ac.tier] || 0) * 1000 + totalScore(a).total;
                                           bv = (rank[bc.tier] || 0) * 1000 + totalScore(b).total; }
-    else if (sortField === 'ls')        { const ad = calcDeriv(a), bd = calcDeriv(b);
+    else if (sortField === 'track')     { const ta = trackData[trackKey(direction, a.id)], tb2 = trackData[trackKey(direction, b.id)];
+                                          av = ta && !ta.closed ? (trackPnl(ta, a.current_price) ?? -999) : -999;
+                                          bv = tb2 && !tb2.closed ? (trackPnl(tb2, b.current_price) ?? -999) : -999; }
+    else if (sortField === 'ls')        { const ad = derivOf(a), bd = derivOf(b);
                                           av = ad && ad.longPct != null ? ad.longPct : -1;
                                           bv = bd && bd.longPct != null ? bd.longPct : -1; }
-    else if (sortField === 'depth')     { const ad = calcDeriv(a), bd = calcDeriv(b);
+    else if (sortField === 'cvd')       { const ad = derivOf(a), bd = derivOf(b);
+                                          av = ad && ad.cvdRatio != null ? ad.cvdRatio : -9;
+                                          bv = bd && bd.cvdRatio != null ? bd.cvdRatio : -9; }
+    else if (sortField === 'depth')     { const ad = derivOf(a), bd = derivOf(b);
                                           av = ad && ad.depthUsd != null ? ad.depthUsd : -1;
                                           bv = bd && bd.depthUsd != null ? bd.depthUsd : -1; }
-    else if (sortField === 'oi')        { const ad = calcDeriv(a), bd = calcDeriv(b);
+    else if (sortField === 'oi')        { const ad = derivOf(a), bd = derivOf(b);
                                           av = ad && ad.oi4h != null ? ad.oi4h : -999;
                                           bv = bd && bd.oi4h != null ? bd.oi4h : -999; }
     else {
@@ -944,13 +1253,13 @@ function renderTable(coins) {
     const s   = ts.s;
     const dv  = ts.dv;
     const tot = ts.total;
-    const sig = getSignals(coin, s);
+    const sig = direction === 'short' ? [] : getSignals(coin, s);
     const sc  = scoreStyle(tot);
     const chg = coin.price_change_percentage_24h_in_currency ?? coin.price_change_percentage_24h ?? 0;
     const cc  = chg >= 0 ? '#00ff88' : '#ff4466';
     const isEx = expandedCoin === coin.id;
 
-    const cl = classify(coin);
+    const cl = tierOf(coin);
     // 排序：立即風險 → 合約訊號 → 莊幣屬性 → 現貨訊號
     const riskTags = [];
     if (cl.dumping)   riskTags.push({ label: '💸 出貨', color: '#ff2244', bg: 'rgba(255,34,68,.22)' });
@@ -965,6 +1274,18 @@ function renderTable(coins) {
     const tierCell = `<td style="text-align:center;" title="${cl.desc}${cl.zhuangLv ? ' · 莊幣特徵：' + cl.zhuangFlags.join('、') : ''}">
         <span class="badge" style="background:${cl.bg};color:${cl.color};font-weight:700;">${cl.label}</span>
         ${cl.hasDeriv ? '' : '<div style="font-size:9px;color:#4a4a6a;margin-top:2px;">無合約</div>'}
+      </td>`;
+
+    const tk    = trackData[trackKey(direction, coin.id)];
+    const tkOn  = tk && !tk.closed;
+    const tkPnl = tkOn ? trackPnl(tk, coin.current_price) : null;
+    const tkBest= tkOn ? trackBest(tk) : null;
+    const trackCell = `<td style="text-align:center;font-size:11px;white-space:nowrap;" title="${
+        tkOn ? `首次警報 ${fmtPrice(tk.firstPrice)}（${tk.firstLabel}）· 期間最佳 ${tkBest == null ? '—' : (tkBest >= 0 ? '+' : '') + tkBest.toFixed(1) + '%'}${tk.hits > 1 ? ' · 第 ' + tk.hits + ' 次觸發' : ''}`
+             : '尚未進入 L1/L2，或訊號已歸檔'}">
+        ${tkPnl === null ? '<span style="color:#4a4a6a;">—</span>' :
+          `<span style="color:${tkPnl >= 0 ? '#00ff88' : '#ff4466'};font-weight:700;">${tkPnl >= 0 ? '+' : ''}${tkPnl.toFixed(1)}%</span>
+           <div style="font-size:9px;color:#6666aa;">${fmtDur(Date.now() - tk.firstTs)}${tk.hits > 1 ? ' ×' + tk.hits : ''}</div>`}
       </td>`;
 
     // 前瞻雷達欄位
@@ -1013,6 +1334,8 @@ function renderTable(coins) {
       const depImb = dv && dv.depthImb != null ? dv.depthImb : null;
       const oiCol = oi4h === null ? '#4a4a6a' : oi4h >= 10 ? '#00ff88' : oi4h <= -10 ? '#ff4466' : '#aaaacc';
       const lsCol = lsPct === null ? '#4a4a6a' : lsPct >= 65 ? '#ff6622' : lsPct <= 40 ? '#00ff88' : '#aaaacc';
+      const cvdR   = dv && dv.cvdRatio != null ? dv.cvdRatio : null;
+      const cvdCol = cvdR === null ? '#4a4a6a' : dv.cvdDiv === 'bear' ? '#ff2244' : cvdR >= 0.03 ? '#00ff88' : cvdR <= -0.03 ? '#ff4466' : '#aaaacc';
       const depRt  = dv && dv.depthRatio != null ? dv.depthRatio : null;
       const depThin = dep1 !== null && ((depRt !== null && depRt < 0.0015) || dep1 < 30000);
       const depCol = dep1 === null ? '#4a4a6a' : depThin ? '#ffaa00' : depImb >= 0.65 ? '#00ff88' : depImb <= 0.35 ? '#ff4466' : '#aaaacc';
@@ -1030,6 +1353,11 @@ function renderTable(coins) {
         <td style="text-align:center;font-size:11px;" title="${lsPct === null ? '無合約或尚未掃描' : '幣安散戶帳戶多空比。一面倒做多時通常是要被清算的那一方，屬反指'}">
           ${lsPct === null ? '<span style="color:#4a4a6a;">—</span>' :
             `<span style="color:${lsCol};font-weight:${lsPct >= 65 || lsPct <= 40 ? '700' : '400'};">${lsPct.toFixed(0)}</span><span style="color:#4a4a6a;">/${(100 - lsPct).toFixed(0)}</span>`}
+        </td>
+        <td style="text-align:center;font-size:11px;white-space:nowrap;" title="${cvdR === null ? '無合約或尚未掃描' : 'CVD：主動買賣淨額佔總成交的比例。正＝買方主動吃單，負＝賣方主動砸盤。背離代表價格與真實買賣力道不同步'}">
+          ${cvdR === null ? '<span style="color:#4a4a6a;">—</span>' :
+            `<span style="color:${cvdCol};font-weight:${Math.abs(cvdR) >= 0.08 ? '700' : '400'};">${(cvdR * 100).toFixed(1)}%</span>
+             ${dv.cvdDiv ? `<div style="font-size:9px;color:${dv.cvdDiv === 'bear' ? '#ff2244' : '#00ff88'};">${dv.cvdDiv === 'bear' ? '⚠背離' : '衰竭'}</div>` : ''}`}
         </td>
         <td style="text-align:right;font-size:11px;white-space:nowrap;" title="${dep1 === null ? '無合約或尚未掃描' : '盤口 ±1% 以內的掛單總額，以及買/賣盤各自佔比。越薄越容易被拉動'}">
           ${dep1 === null ? '<span style="color:#4a4a6a;">—</span>' :
@@ -1062,6 +1390,7 @@ function renderTable(coins) {
         </div>
       </td>
       ${tierCell}
+      ${trackCell}
       <td style="text-align:right;font-family:monospace;font-size:12px;">${fmtPrice(coin.current_price)}</td>
       <td style="text-align:right;color:${cc};font-weight:700;font-size:13px;">${fmtPct(chg)}</td>
       <td style="text-align:right;font-size:12px;color:#aaaacc;">${
@@ -1076,7 +1405,7 @@ function renderTable(coins) {
 
     if (!isEx) return mainRow;
 
-    const colSpan = currentTab === 'forward' ? 10 : 15;
+    const colSpan = currentTab === 'forward' ? 10 : 16;
 
     // 解鎖風險：MC/FDV 比值，越低代表未解鎖籌碼越多
     const fdv = coin.fully_diluted_valuation || 0;
@@ -1513,11 +1842,13 @@ function bnSymbolOf(coin) {
 
 // 單一幣種深掃：OI 變化率 + 1h/4h 漲幅 + 量倍數
 async function bnScanOne(sym) {
-  const [oiHist, kl, ls, dep] = await Promise.all([
+  const [oiHist, kl, ls, dep, kl5] = await Promise.all([
     bnFetch(`/futures/data/openInterestHist?symbol=${sym}&period=1h&limit=25`).catch(() => null),
     bnFetch(`/fapi/v1/klines?symbol=${sym}&interval=1h&limit=25`).catch(() => null),
     bnFetch(`/futures/data/globalLongShortAccountRatio?symbol=${sym}&period=1h&limit=1`).catch(() => null),
     bnFetch(`/fapi/v1/depth?symbol=${sym}&limit=100`).catch(() => null),
+    // 5 分鐘 K：一次請求就能算出 5m/15m/30m 三個時框，妖幣常常 15 分鐘內走完一段
+    bnFetch(`/fapi/v1/klines?symbol=${sym}&interval=5m&limit=72`).catch(() => null),
   ]);
   const out = { sym };
   // 盤口深度：±1% 以內的掛單金額。這是「薄不薄」的直接證據，
@@ -1568,6 +1899,50 @@ async function bnScanOne(sym) {
     // 24h 內從最高點回落多少（判斷是不是已經在派發）
     const hi = Math.max(...kl.map(k => parseFloat(k[2])));
     out.drawdown = hi > 0 ? (hi - close[n - 1]) / hi * 100 : null;
+
+    // ---- CVD（主動買賣淨額累積）----
+    // 每根的淨額 = 主動買 − 主動賣 = 2×takerBuy − 總成交，累加成曲線。
+    // 價格在漲但 CVD 沒跟上，代表拉抬沒有真實買盤承接，多半是誘多。
+    const cvdSeries = [];
+    let cum = 0;
+    for (const k of kl) {
+      const q = parseFloat(k[7]), tb = parseFloat(k[10]);
+      cum += (2 * tb - q);
+      cvdSeries.push(cum);
+    }
+    const totalQv = qv.reduce((a, b) => a + b, 0);
+    out.cvd = cum;
+    out.cvdRatio = totalQv > 0 ? cum / totalQv : null;   // 淨額佔總成交比例，跨幣種才好比較
+
+    // 背離：拿後段的價格／CVD 高低點跟前段比
+    const cut = Math.max(3, Math.floor(n * 0.6));
+    const pPrevMax = Math.max(...close.slice(0, cut));
+    const pPrevMin = Math.min(...close.slice(0, cut));
+    const cPrevMax = Math.max(...cvdSeries.slice(0, cut));
+    const cPrevMin = Math.min(...cvdSeries.slice(0, cut));
+    const pNow = close[n - 1], cNow = cvdSeries[n - 1];
+    const span = Math.max(1e-9, Math.abs(cPrevMax - cPrevMin));
+    out.cvdDiv = null;
+    // 價格站上前段高點、CVD 卻沒跟上 → 空頭背離（拉抬無承接）
+    if (pNow >= pPrevMax * 1.002 && (cPrevMax - cNow) > span * 0.22) out.cvdDiv = 'bear';
+    // 價格破前段低點、CVD 沒破底 → 多頭背離（賣壓衰竭）
+    else if (pNow <= pPrevMin * 0.998 && (cNow - cPrevMin) > span * 0.22) out.cvdDiv = 'bull';
+  }
+
+  // ---- 短時框（5m / 15m / 30m）----
+  if (kl5 && kl5.length >= 12) {
+    const c5 = kl5.map(k => parseFloat(k[4]));
+    const q5 = kl5.map(k => parseFloat(k[7]));
+    const m = c5.length;
+    const pc = (back) => c5[m - 1 - back] > 0 ? (c5[m - 1] / c5[m - 1 - back] - 1) * 100 : null;
+    out.c5m  = pc(1);
+    out.c15m = pc(3);
+    out.c30m = pc(6);
+    const prev5 = q5.slice(0, m - 1);
+    const avg5 = prev5.reduce((a, b) => a + b, 0) / (prev5.length || 1);
+    const el5 = Math.max(0.08, Math.min(1, (Date.now() - kl5[m - 1][0]) / 300000));
+    out.v5m = avg5 > 0 ? (q5[m - 1] / el5) / avg5 : null;
+    out.v15m = avg5 > 0 ? (q5.slice(-4, -1).reduce((a, b) => a + b, 0) / 3) / avg5 : null;
   }
   return out;
 }
@@ -1606,7 +1981,7 @@ async function scanDerivatives(coins, force = false) {
     await bnLoadMarket();
     const cands = coins
       .filter(derivPassFilter)
-      .map(c => ({ c, sym: bnSymbolOf(c), base: calcScore(c).total }))
+      .map(c => ({ c, sym: bnSymbolOf(c), base: spotOf(c).total }))
       .filter(x => x.sym)
       .sort((a, b) => b.base - a.base)
       .slice(0, DERIV_TOP_N);
@@ -1614,7 +1989,7 @@ async function scanDerivatives(coins, force = false) {
     const res = await pMap(cands, async x => {
       const d = await bnScanOne(x.sym);
       return { id: x.c.id, d };
-    }, 6);
+    }, 8);
 
     derivData.clear();
     for (const r of res) {
@@ -1712,6 +2087,20 @@ function startCountdown() {
 // ============================================================
 let baseCoins = []; // 保存全部模式的完整資料集
 
+function toggleDirection(btn) {
+  direction = direction === 'long' ? 'short' : 'long';
+  const isShort = direction === 'short';
+  btn.textContent      = isShort ? '📉 做空' : '📈 做多';
+  btn.style.background = isShort ? 'rgba(255,68,102,.14)' : 'rgba(0,255,136,.14)';
+  btn.style.borderColor= isShort ? 'rgba(255,68,102,.45)' : 'rgba(0,255,136,.4)';
+  btn.style.color      = isShort ? '#ff4466' : '#00ff88';
+  expandedCoin = null;
+  bubbleSel = null;
+  updateFormulaCard();
+  renderTable(window.__coins || []);
+  if (currentTab === 'track') renderTrack();
+}
+
 function toggleTier(t) {
   tierFilter = (tierFilter === t) ? null : t;
   renderTable(window.__coins || []);
@@ -1763,7 +2152,7 @@ async function setCategory(cat, btn) {
   // 快取未命中：即時抓取
   document.getElementById('statusText').textContent = '載入板塊...';
   document.getElementById('tableBody').innerHTML =
-    '<tr><td colspan="15" style="text-align:center;padding:30px;color:#8888aa;font-size:13px;">⏳ 載入中...</td></tr>';
+    '<tr><td colspan="16" style="text-align:center;padding:30px;color:#8888aa;font-size:13px;">⏳ 載入中...</td></tr>';
 
   const coins = await fetchCoins(cat);
   if (coins && coins.length > 0) {
@@ -1831,6 +2220,139 @@ function calcForward(coin, baseScore) {
 }
 
 // ============================================================
+// 首警追蹤（localStorage 本機版）
+//   記錄每檔幣「第一次進入 L1/L2」的時間與價格，之後持續追蹤報酬，
+//   掉出榜單夠久就歸檔。有了這層才能回頭統計哪一類訊號真的準。
+//   限制：資料只存在這台瀏覽器；沒開頁面的時段不會記錄。
+// ============================================================
+const TRACK_KEY = 'memeRadarTrack_v1';
+const TRACK_CLOSE_MIN = 45;     // 掉出分級超過這麼多分鐘 → 視為訊號結束
+const TRACK_KEEP_CLOSED = 300;  // 已結束的最多保留幾筆
+const TRACK_THROTTLE = 20000;
+let trackData = {};
+let _trackLast = 0;
+
+function trackLoad() {
+  try { trackData = JSON.parse(localStorage.getItem(TRACK_KEY) || '{}'); }
+  catch (e) { trackData = {}; }
+}
+function trackSave() {
+  try {
+    const closed = Object.entries(trackData)
+      .filter(([, v]) => v.closed)
+      .sort((a, b) => (b[1].closedTs || 0) - (a[1].closedTs || 0));
+    for (const [k] of closed.slice(TRACK_KEEP_CLOSED)) delete trackData[k];
+    localStorage.setItem(TRACK_KEY, JSON.stringify(trackData));
+  } catch (e) {}
+}
+trackLoad();
+
+const trackKey = (dir, id) => dir + ':' + id;
+
+// 報酬：做多看漲多少，做空看跌多少（所以要反號）
+function trackPnl(rec, price) {
+  if (!rec || !rec.firstPrice || !price) return null;
+  const r = (price - rec.firstPrice) / rec.firstPrice * 100;
+  return rec.dir === 'short' ? -r : r;
+}
+// 這段期間內最好曾經有多少（做多看最高、做空看最低）
+function trackBest(rec) {
+  if (!rec || !rec.firstPrice) return null;
+  const px = rec.dir === 'short' ? rec.trough : rec.peak;
+  if (!px) return null;
+  const r = (px - rec.firstPrice) / rec.firstPrice * 100;
+  return rec.dir === 'short' ? -r : r;
+}
+function fmtDur(ms) {
+  const m = Math.max(0, Math.round(ms / 60000));
+  if (m < 60) return m + '分';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + '時' + (m % 60 ? (m % 60) + '分' : '');
+  return Math.floor(h / 24) + '天' + (h % 24 ? (h % 24) + '時' : '');
+}
+
+function trackUpdate(coins) {
+  const now = Date.now();
+  if (now - _trackLast < TRACK_THROTTLE) return;
+  _trackLast = now;
+  const dir = direction;
+  const seen = new Set();
+
+  for (const c of (coins || [])) {
+    const cl = tierOf(c);
+    if (cl.tier !== 'L1' && cl.tier !== 'L2') continue;
+    const price = c.current_price || 0;
+    if (!price) continue;
+    const k = trackKey(dir, c.id);
+    seen.add(k);
+    const old = trackData[k];
+    if (!old || old.closed) {
+      // 新訊號，或是歸檔後又重新觸發
+      trackData[k] = {
+        id: c.id, sym: (c.symbol || '').toUpperCase(), name: c.name || '', dir,
+        firstTs: now, firstPrice: price, firstTier: cl.tier, firstLabel: cl.label,
+        firstScore: totalScore(c).total,
+        hits: old ? (old.hits || 1) + 1 : 1,
+        peak: price, trough: price,
+        lastTs: now, lastPrice: price, lastTier: cl.tier, lastLabel: cl.label,
+        closed: false, missTs: 0,
+      };
+    } else {
+      old.lastTs = now; old.lastPrice = price;
+      old.lastTier = cl.tier; old.lastLabel = cl.label;
+      old.peak = Math.max(old.peak || price, price);
+      old.trough = Math.min(old.trough || price, price);
+      old.missTs = 0;
+    }
+  }
+
+  // 掉出榜單的：先記下時間，連續缺席夠久才歸檔（避免邊緣跳動一直開關）
+  const all = window.__coins || [];
+  for (const [k, rec] of Object.entries(trackData)) {
+    if (rec.closed || rec.dir !== dir || seen.has(k)) continue;
+    const c = all.find(x => x.id === rec.id);
+    if (c && c.current_price) {
+      rec.lastPrice = c.current_price;
+      rec.peak = Math.max(rec.peak || 0, c.current_price);
+      rec.trough = Math.min(rec.trough || Infinity, c.current_price);
+    }
+    if (!rec.missTs) rec.missTs = now;
+    else if (now - rec.missTs > TRACK_CLOSE_MIN * 60000) {
+      rec.closed = true;
+      rec.closedTs = now;
+      rec.closedPrice = rec.lastPrice;
+    }
+  }
+  trackSave();
+}
+
+// 依首警分級統計歷史表現
+function trackStats(dir) {
+  const recs = Object.values(trackData).filter(r => r.dir === dir);
+  const byKey = {};
+  for (const r of recs) {
+    const label = r.firstLabel || '—';
+    const pnl = r.closed ? trackPnl(r, r.closedPrice) : trackPnl(r, r.lastPrice);
+    const best = trackBest(r);
+    if (pnl === null) continue;
+    (byKey[label] = byKey[label] || { label, n: 0, sum: 0, win: 0, bestSum: 0, tier: r.firstTier })
+      .n++;
+    byKey[label].sum += pnl;
+    byKey[label].bestSum += (best ?? pnl);
+    if (pnl > 0) byKey[label].win++;
+  }
+  return Object.values(byKey).sort((a, b) => b.n - a.n);
+}
+
+function trackClear() {
+  if (!confirm('確定清除所有首警追蹤紀錄？這個動作無法復原。')) return;
+  trackData = {};
+  try { localStorage.removeItem(TRACK_KEY); } catch (e) {}
+  if (currentTab === 'track') renderTrack();
+  renderTable(window.__coins || []);
+}
+
+// ============================================================
 // 泡泡圖
 //   氣泡大小＝雷達最終評分，顏色＝分級，虛線外框＝莊幣嫌疑
 //   佈局用碰撞鬆弛自己算（50 顆泡泡幾毫秒就收斂），不外掛任何繪圖庫
@@ -1895,13 +2417,13 @@ function bubbleCandidates(coins) {
       const mc = c.market_cap || c.fully_diluted_valuation || 0;
       if (mc > MEME_MAX_MC) return false;
     }
-    if (hideDead && sc.death && sc.death.dead) return false;
+    if (hideDead && direction === 'long' && sc.death && sc.death.dead) return false;
     return true;
   });
-  if (tierFilter) list = list.filter(c => classify(c).tier === tierFilter);
+  if (tierFilter) list = list.filter(c => tierOf(c).tier === tierFilter);
   const rank = { L1: 3, L2: 2, RISK: 1 };
   const ranked = list
-    .map(c => ({ c, ts: totalScore(c), cl: classify(c) }))
+    .map(c => ({ c, ts: totalScore(c), cl: tierOf(c) }))
     // 先讓有分級的進榜（L1 > L2 > 風險 > 無），同級再比分數；泡泡大小仍然只看分數
     .sort((a, b) => ((rank[b.cl.tier] || 0) - (rank[a.cl.tier] || 0)) || (b.ts.total - a.ts.total));
   // 個位數分數的幣佔著版面沒有意義；但整個市場都很弱時，至少留 12 顆免得畫面空掉
@@ -1976,7 +2498,7 @@ function renderBubbleDetail(id) {
   if (!box) return;
   const coin = (window.__coins || []).find(c => c.id === id);
   if (!id || !coin) { box.style.display = 'none'; return; }
-  const ts = totalScore(coin), cl = classify(coin), d = ts.dv, s = ts.s;
+  const ts = totalScore(coin), cl = tierOf(coin), d = ts.dv, s = ts.s;
   const chg = coin.price_change_percentage_24h_in_currency ?? coin.price_change_percentage_24h ?? 0;
   const row = (k, v, c) => `<div style="display:flex;justify-content:space-between;gap:10px;">
       <span style="color:#6666aa;">${k}</span><span style="color:${c || '#e8e8ff'};font-weight:600;">${v}</span></div>`;
@@ -2010,6 +2532,11 @@ function renderBubbleDetail(id) {
       ${row('盤口 / 市值', d && d.depthRatio != null ? (d.depthRatio * 100).toFixed(3) + '%' : na, d && d.depthRatio != null && d.depthRatio < .0015 ? '#ffaa00' : '#e8e8ff')}
       ${row('買賣價差', d && d.spread != null ? d.spread.toFixed(3) + '%' : na)}
       ${row('Taker 主動買', d && d.taker != null ? (d.taker * 100).toFixed(1) + '%' : na, d && d.taker != null && d.taker < .42 ? '#ff4466' : '#e8e8ff')}
+      ${row('CVD 淨額 24h', d && d.cvd != null ? (d.cvd >= 0 ? '+' : '') + fmtK(Math.abs(d.cvd)) : na, d && d.cvd > 0 ? '#00ff88' : '#ff4466')}
+      ${row('CVD 佔成交比', d && d.cvdRatio != null ? (d.cvdRatio * 100).toFixed(1) + '%' : na, d && d.cvdRatio > 0 ? '#00ff88' : '#ff4466')}
+      ${row('CVD 背離', d && d.cvdDiv ? (d.cvdDiv === 'bear' ? '空頭背離（誘多）' : '多頭背離（賣壓衰竭）') : (d ? '無' : na), d && d.cvdDiv === 'bear' ? '#ff2244' : d && d.cvdDiv === 'bull' ? '#00ff88' : '#8888aa')}
+      ${row('5m / 15m / 30m', d && d.c15m != null ? `${(d.c5m ?? 0).toFixed(1)}% / ${d.c15m.toFixed(1)}% / ${(d.c30m ?? 0).toFixed(1)}%` : na)}
+      ${row('短線量倍數 5m/15m', d && d.v5m != null ? `${d.v5m.toFixed(1)}x / ${(d.v15m ?? 0).toFixed(1)}x` : na, d && d.v5m >= 3 ? '#f7c948' : '#e8e8ff')}
       ${row('莊幣指數', cl.zhuangLv ? `${cl.zhuang}/4 · ${cl.zhuangLv}` : '0/4', cl.zhuang >= 3 ? '#ff2244' : cl.zhuang === 2 ? '#ffaa00' : '#8888aa')}
     </div>
     ${cl.zhuangFlags.length ? `<div style="margin-top:8px;font-size:10px;color:#ffaa00;">莊幣特徵：${cl.zhuangFlags.join('、')}</div>` : ''}
@@ -2025,6 +2552,104 @@ window.addEventListener('resize', () => {
 });
 
 // ============================================================
+// 訊號追蹤頁：進行中 / 已歸檔 / 分級勝率統計
+// ============================================================
+function renderTrack() {
+  const box = document.getElementById('trackBody');
+  if (!box) return;
+  const dir = direction;
+  const dirName = dir === 'short' ? '做空' : '做多';
+  const all = Object.values(trackData).filter(r => r.dir === dir);
+  const live = all.filter(r => !r.closed).sort((a, b) => b.firstTs - a.firstTs);
+  const done = all.filter(r => r.closed).sort((a, b) => (b.closedTs || 0) - (a.closedTs || 0)).slice(0, 60);
+  const stats = trackStats(dir);
+  const coins = window.__coins || [];
+  const priceOf = (rec) => {
+    const c = coins.find(x => x.id === rec.id);
+    return (c && c.current_price) || rec.lastPrice;
+  };
+  const pnlCell = (v) => v === null || v === undefined
+    ? '<span style="color:#4a4a6a;">—</span>'
+    : `<span style="color:${v >= 0 ? '#00ff88' : '#ff4466'};font-weight:700;">${v >= 0 ? '+' : ''}${v.toFixed(1)}%</span>`;
+
+  const head = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+      <div>
+        <div style="font-size:13px;font-weight:700;color:#e8e8ff;">${dirName}訊號追蹤</div>
+        <div style="font-size:10px;color:#6666aa;margin-top:2px;">
+          從每檔幣第一次進入 L1/L2 起算 · 掉出分級超過 ${TRACK_CLOSE_MIN} 分鐘歸檔 ·
+          紀錄只存在這台瀏覽器，沒開頁面的時段不會記錄
+        </div>
+      </div>
+      <button onclick="trackClear()" style="padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;
+        background:rgba(255,68,102,.10);border:1px solid rgba(255,68,102,.3);color:#ff4466;">清除紀錄</button>
+    </div>`;
+
+  const statBlock = !stats.length ? '' : `
+    <div style="margin-bottom:14px;padding:12px;border:1px solid #1e1e3a;border-radius:10px;background:rgba(0,0,0,.28);">
+      <div style="font-size:11px;color:#8888aa;margin-bottom:8px;">各分級歷史表現（含進行中）</div>
+      <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:460px;">
+        <tr style="color:#6666aa;text-align:right;">
+          <th style="text-align:left;padding:4px 6px;">首警分級</th><th style="padding:4px 6px;">樣本</th>
+          <th style="padding:4px 6px;">平均報酬</th><th style="padding:4px 6px;">勝率</th><th style="padding:4px 6px;">平均最佳</th>
+        </tr>
+        ${stats.map(x => {
+          const avg = x.sum / x.n, best = x.bestSum / x.n, win = x.win / x.n * 100;
+          return `<tr style="border-top:1px solid #15152a;text-align:right;">
+            <td style="text-align:left;padding:5px 6px;color:#e8e8ff;">${x.label}</td>
+            <td style="padding:5px 6px;color:#aaaacc;">${x.n}</td>
+            <td style="padding:5px 6px;">${pnlCell(avg)}</td>
+            <td style="padding:5px 6px;color:${win >= 50 ? '#00ff88' : '#ff6622'};">${win.toFixed(0)}%</td>
+            <td style="padding:5px 6px;color:#8888aa;">${best >= 0 ? '+' : ''}${best.toFixed(1)}%</td>
+          </tr>`;
+        }).join('')}
+      </table></div>
+      <div style="font-size:10px;color:#4a4a6a;margin-top:6px;">
+        樣本數太少（&lt; 20）時不要當結論看；「平均最佳」是期間內曾經到過的最好報酬，不是你真的拿得到的。
+      </div>
+    </div>`;
+
+  const rowsOf = (list, isDone) => list.map(r => {
+    const px = isDone ? r.closedPrice : priceOf(r);
+    const pnl = trackPnl(r, px);
+    const best = trackBest(r);
+    return `<tr style="border-top:1px solid #15152a;">
+      <td style="padding:6px;font-weight:700;color:#e8e8ff;">${r.sym}<div style="font-size:9px;color:#6666aa;font-weight:400;">${(r.name || '').slice(0, 14)}</div></td>
+      <td style="padding:6px;font-size:10px;color:#aaaacc;">${r.firstLabel || '—'}${r.hits > 1 ? `<div style="font-size:9px;color:#f7c948;">第 ${r.hits} 次</div>` : ''}</td>
+      <td style="padding:6px;text-align:right;font-family:monospace;font-size:11px;color:#8888aa;">${fmtPrice(r.firstPrice)}</td>
+      <td style="padding:6px;text-align:right;font-family:monospace;font-size:11px;color:#e8e8ff;">${fmtPrice(px)}</td>
+      <td style="padding:6px;text-align:right;">${pnlCell(pnl)}</td>
+      <td style="padding:6px;text-align:right;font-size:11px;color:#8888aa;">${best === null ? '—' : (best >= 0 ? '+' : '') + best.toFixed(1) + '%'}</td>
+      <td style="padding:6px;text-align:right;font-size:10px;color:#6666aa;white-space:nowrap;">${fmtDur((isDone ? r.closedTs : Date.now()) - r.firstTs)}</td>
+    </tr>`;
+  }).join('');
+
+  const tableOf = (title, list, isDone) => !list.length ? '' : `
+    <div style="margin-bottom:14px;">
+      <div style="font-size:11px;color:#8888aa;margin-bottom:6px;">${title}（${list.length}）</div>
+      <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:560px;">
+        <tr style="color:#6666aa;">
+          <th style="text-align:left;padding:4px 6px;">代幣</th><th style="text-align:left;padding:4px 6px;">首警分級</th>
+          <th style="text-align:right;padding:4px 6px;">首警價</th><th style="text-align:right;padding:4px 6px;">${isDone ? '結束價' : '現價'}</th>
+          <th style="text-align:right;padding:4px 6px;">報酬</th><th style="text-align:right;padding:4px 6px;">期間最佳</th>
+          <th style="text-align:right;padding:4px 6px;">持續</th>
+        </tr>
+        ${rowsOf(list, isDone)}
+      </table></div>
+    </div>`;
+
+  box.innerHTML = head + statBlock +
+    (live.length || done.length
+      ? tableOf('進行中', live, false) + tableOf('已歸檔', done, true)
+      : `<div style="padding:28px;text-align:center;color:#6666aa;font-size:12px;">
+           還沒有${dirName}訊號紀錄。<br>
+           把頁面開著，等有幣進入 L1/L2 就會自動開始記錄首警價與後續表現。
+         </div>`);
+}
+
+// ============================================================
 // Tab 切換
 // ============================================================
 function switchTab(tab, btn) {
@@ -2032,13 +2657,18 @@ function switchTab(tab, btn) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   const isBub = tab === 'bubble';
+  const isTrk = tab === 'track';
   const tc = document.getElementById('tableCard');
   const bc = document.getElementById('bubbleCard');
-  if (tc) tc.style.display = isBub ? 'none' : '';
+  const kc = document.getElementById('trackCard');
+  if (tc) tc.style.display = (isBub || isTrk) ? 'none' : '';
   if (bc) bc.style.display = isBub ? '' : 'none';
+  if (kc) kc.style.display = isTrk ? '' : 'none';
   updateFormulaCard();
   if (isBub) {
     setTimeout(() => renderBubbles(allCoins), 0);
+  } else if (isTrk) {
+    renderTrack();
   } else {
     updateTableHeader();
     renderTable(allCoins);
@@ -2053,6 +2683,7 @@ function updateTableHeader() {
         <th onclick="sortBy('score')" style="width:58px;text-align:center;">評分 <span class="sort-arr active" id="sa-score">↓</span></th>
         <th>代幣</th>
         <th onclick="sortBy('tier')" style="text-align:center;min-width:96px;">分級 <span class="sort-arr" id="sa-tier">↕</span></th>
+        <th onclick="sortBy('track')" style="text-align:center;">首警後 <span class="sort-arr" id="sa-track">↕</span></th>
         <th onclick="sortBy('price')" style="text-align:right;">價格 <span class="sort-arr" id="sa-price">↕</span></th>
         <th onclick="sortBy('change')" style="text-align:right;">24h <span class="sort-arr" id="sa-change">↕</span></th>
         <th onclick="sortBy('marketcap')" style="text-align:right;">市值 <span class="sort-arr" id="sa-marketcap">↕</span></th>
@@ -2074,6 +2705,7 @@ function updateTableHeader() {
         <th onclick="sortBy('oi')" style="text-align:right;color:#00ff88;">OI 4h <span class="sort-arr" id="sa-oi">↕</span></th>
         <th style="text-align:right;color:#ff6622;">費率</th>
         <th onclick="sortBy('ls')" style="text-align:center;color:#aa88ff;">多空 <span class="sort-arr" id="sa-ls">↕</span></th>
+        <th onclick="sortBy('cvd')" style="text-align:center;color:#ffcc66;">CVD <span class="sort-arr" id="sa-cvd">↕</span></th>
         <th onclick="sortBy('depth')" style="text-align:right;color:#66ccff;">深度 <span class="sort-arr" id="sa-depth">↕</span></th>
         <th onclick="sortBy('amplitude')" style="text-align:right;">振幅 <span class="sort-arr" id="sa-amplitude">↕</span></th>
         <th style="text-align:right;">高低區間</th>
@@ -2105,6 +2737,44 @@ function updateFormulaCard() {
           <span style="color:#e8e8ff;">上限</span><span style="color:#aa44ff;">100 分</span>
         </div>
       </div>`;
+  } else if (direction === 'short') {
+    card.style.background  = 'rgba(255,68,102,.04)';
+    card.style.borderColor = 'rgba(255,68,102,.2)';
+    card.innerHTML = `
+      <h3 style="font-size:12px;font-weight:700;color:#ff4466;margin-bottom:10px;">📉 做空評分公式</h3>
+      <div style="font-size:11px;color:#8888aa;line-height:2;">
+        <div style="color:#6666aa;font-size:10px;">現貨層</div>
+        <div style="display:flex;justify-content:space-between;"><span>量能（放量下跌加分）</span><span style="color:#e8e8ff;">25 分</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>日內振幅</span><span style="color:#e8e8ff;">15 分</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>薄盤加權（好砸）</span><span style="color:#e8e8ff;">18 分</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>做空窗口（剛轉弱最好）</span><span style="color:#e8e8ff;">18 分</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>下跌空間（離 ATL 多遠）</span><span style="color:#e8e8ff;">8 分</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>7 日位置（高位加分）</span><span style="color:#e8e8ff;">+12 / −8</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>中期動能</span><span style="color:#e8e8ff;">+10 / −12</span></div>
+        <div style="padding-top:8px;margin-top:6px;border-top:1px solid rgba(255,68,102,.15);color:#ff4466;font-size:10px;">合約修正</div>
+        <div style="display:flex;justify-content:space-between;"><span>OI 增而價跌＝空單進場</span><span style="color:#e8e8ff;">+12 / −6</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>費率過熱（多頭擁擠）</span><span style="color:#e8e8ff;">+12 / −10</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>CVD 派發背離</span><span style="color:#e8e8ff;">+12 / −6</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>盤口賣壓重</span><span style="color:#e8e8ff;">+8 / −5</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>15m 急殺</span><span style="color:#e8e8ff;">+8 / −4</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>散戶一面倒做多（反指）</span><span style="color:#e8e8ff;">+6 / −4</span></div>
+        <div style="padding-top:8px;margin-top:6px;border-top:1px solid rgba(255,68,102,.15);color:#ff4466;font-size:10px;">L1 · 正在崩</div>
+        <div style="color:#8888aa;font-size:10px;line-height:1.7;">
+          🔻 崩跌中 · 正在跌且 OI 還在增<br>
+          💀 出貨中 · 價撐高位但主動買消失<br>
+          ⚡ 急殺 · 15 分鐘放量急跌
+        </div>
+        <div style="padding-top:6px;color:#f7c948;font-size:10px;">L2 · 還沒破位</div>
+        <div style="color:#8888aa;font-size:10px;line-height:1.7;">
+          🕳 頂部派發 · 高位、CVD 轉負<br>
+          🧨 多頭擁擠 · 費率過熱或散戶一面倒<br>
+          📉 轉弱 · 短線結構開始走壞
+        </div>
+        <div style="padding-top:6px;color:#00ff88;font-size:10px;">⚠️ 逼空風險</div>
+        <div style="color:#8888aa;font-size:10px;line-height:1.7;">
+          費率極負＝空頭已擁擠、賣壓衰竭、或已貼著歷史低點。<br>這種追空容易被軋，雷達會把它獨立標出來。
+        </div>
+      </div>`;
   } else {
     card.style.background  = 'rgba(0,255,136,.03)';
     card.style.borderColor = 'rgba(0,255,136,.15)';
@@ -2131,7 +2801,7 @@ function updateFormulaCard() {
         <div style="display:flex;justify-content:space-between;"><span>散戶多空失衡（反指）</span><span style="color:#e8e8ff;">+4 / −4</span></div>
         <div style="color:#6666aa;font-size:10px;line-height:1.6;padding-top:6px;">
           洗量（換手 &gt;5x 卻不動）、流動性 &lt; $250K、代幣化股票、資料殘缺一律先剔除，不進排名。<br>
-          合約指標每 3 分鐘掃一次，只掃現貨初篩前 40 名。有合約：現貨分 ×0.62 + 合約修正；沒合約：現貨分 ×0.85。
+          合約指標每 3 分鐘掃一次，只掃現貨初篩前 40 名。有合約：現貨分 ×0.55 + 合約修正；沒合約：現貨分 ×0.85。
         </div>
         <div style="padding-top:8px;margin-top:6px;border-top:1px solid rgba(0,255,136,.15);color:#ff4466;font-size:10px;">L1 · 正在動</div>
         <div style="color:#8888aa;font-size:10px;line-height:1.7;">
@@ -2186,7 +2856,7 @@ async function loadAll() {
   } else if (!allCoins.length) {
     const wait = apiCooldownLeft();
     document.getElementById('tableBody').innerHTML =
-      `<tr><td colspan="15" style="text-align:center;padding:30px;color:#ff6622;font-size:13px;">` +
+      `<tr><td colspan="16" style="text-align:center;padding:30px;color:#ff6622;font-size:13px;">` +
       (wait ? `⏳ CoinGecko 速率限制中，${wait} 秒後自動重試` : '⚠️ 資料暫時取不到，下一輪自動重試') +
       `</td></tr>`;
   }
