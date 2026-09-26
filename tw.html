@@ -878,7 +878,27 @@ async function fetchTWSE() {
 }
 async function fetchTPEx()  { return proxiedFetch('https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes'); }
 async function fetchIndex() { return proxiedFetch('https://openapi.twse.com.tw/v1/exchangeReport/MI_INDEX'); }
+// K線：2026-09 改 FinMind 直連（開放 CORS、免代理、上市上櫃代號通用），失敗才退回 Yahoo 代理。
+// ⚠️ 前端不放 token（公開頁面會外洩）；無 token 每訪客 IP 每小時 300 次，點 K 線一次 1 次，綽綽有餘。
+async function fetchFinMind(code) {
+  const start = new Date(Date.now() - 130 * 864e5).toISOString().slice(0, 10);
+  const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${code}&start_date=${start}`;
+  const r = await fetch(url);
+  const d = await r.json();
+  const rows = (d.data || []).filter(x => x.close > 0);
+  if (d.status !== 200 || !rows.length) throw new Error(d.msg || 'FinMind 無資料');
+  // 轉成 Yahoo chart 相同結構，下游繪圖程式不用改
+  return { chart: { result: [{
+    timestamp: rows.map(x => Math.floor(Date.parse(x.date + 'T09:00:00+08:00') / 1000)),
+    indicators: { quote: [{
+      open: rows.map(x => x.open), high: rows.map(x => x.max), low: rows.map(x => x.min),
+      close: rows.map(x => x.close), volume: rows.map(x => x.Trading_Volume),
+    }] },
+  }] } };
+}
 async function fetchYahoo(code, market) {
+  try { return await fetchFinMind(code); }
+  catch (e) { console.warn('FinMind 失敗，改走 Yahoo 代理：', e.message); }
   const suffix = market === 'TPEx' ? '.TWO' : '.TW';
   const url = `https://query2.finance.yahoo.com/v8/finance/chart/${code}${suffix}?range=4mo&interval=1d`;
   return proxiedFetch(url);
